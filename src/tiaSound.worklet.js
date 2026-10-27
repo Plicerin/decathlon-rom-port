@@ -1,0 +1,132 @@
+// TIA sound generator (two channels) as an AudioWorklet, after Ron Fries'
+// TIASound: each channel divides the 31.4 kHz audio clock by AUDF+1 (x3 for
+// AUDC $C-$F) and on each tick steps the waveform its AUDC selects.
+// The game posts each frame's sound register writes, { writes: [[register,
+// value, cycle in the frame], ...], cycles: the frame's length }, and they are
+// played back at their moments: one audio clock tick is 38 CPU cycles (two per
+// scanline). Frames are queued end to end a little ahead of the output; when
+// the queue runs dry (a pause) or too far ahead, it starts again just ahead.
+// { silent } mutes the output and keeps the register state.
+
+const TIA_AUDIO_CLOCK = 3579545 / 114;
+const CYCLES_PER_TICK = 38;
+const LEAD = 2 * 524;      // ticks queued ahead of the output when (re)starting: two frames
+const MAX_AHEAD = 8 * 524; // more than this ahead and the queue starts again
+
+function lfsr(bits, tap, length) {
+  // maximal-length shift register sequences used by the TIA polynomial counters
+  const out = new Uint8Array(length);
+  let reg = (1 << bits) - 1;
+  for (let i = 0; i < length; i += 1) {
+    out[i] = reg & 1;
+    const fb = ((reg >> 0) ^ (reg >> tap)) & 1;
+    reg = (reg >> 1) | (fb << (bits - 1));
+  }
+  return out;
+}
+
+const POLY4 = Uint8Array.from([1, 1, 0, 1, 1, 1, 0, 0, 0, 0, 1, 0, 1, 0, 0]);
+const POLY5 = Uint8Array.from([0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 0, 1, 1, 1, 0, 1, 0, 1, 0, 0, 0, 0, 1]);
+const DIV31 = Uint8Array.from({ length: 31 }, (_, i) => (i === 0 || i === 18 ? 1 : 0));
+const POLY9 = lfsr(9, 4, 511);
+
+class Channel {
+  constructor() {
+    this.audc = 0; this.audf = 0; this.audv = 0;
+    this.divMax = 0; this.divCount = 0; this.out = 0;
+    this.p4 = 0; this.p5 = 0; this.p9 = 0;
+  }
+
+  set(audc, audf, audv) {
+    this.audc = audc & 0x0f; this.audf = audf & 0x1f; this.audv = audv & 0x0f;
+    let max;
+    if (this.audc === 0x00 || this.audc === 0x0b) { // set to 1
+      max = 0;
+      this.out = this.audv;
+    } else {
+      max = this.audf + 1;
+      if ((this.audc & 0x0c) === 0x0c) max *= 3;
+    }
+    if (max !== this.divMax) {
+      this.divMax = max;
+      if (this.divCount === 0 || max === 0) this.divCount = max;
+    }
+    if (this.out) this.out = this.audv; // keep the current phase at the new volume
+  }
+
+  tick() {
+    if (this.divCount > 1) { this.divCount -= 1; return; }
+    if (this.divCount !== 1) return;
+    this.divCount = this.divMax;
+    this.p5 = (this.p5 + 1) % 31;
+    const c = this.audc;
+    const clocked = (c & 0x02) === 0 || ((c & 0x01) === 0 && DIV31[this.p5]) || ((c & 0x01) === 1 && POLY5[this.p5]);
+    if (!clocked) return;
+    if (c & 0x04) this.out = this.out ? 0 : this.audv; // pure tone
+    else if (c & 0x08) {
+      if (c === 0x08) { this.p9 = (this.p9 + 1) % 511; this.out = POLY9[this.p9] ? this.audv : 0; }
+      else this.out = POLY5[this.p5] ? this.audv : 0;
+    } else { this.p4 = (this.p4 + 1) % 15; this.out = POLY4[this.p4] ? this.audv : 0; }
+  }
+}
+
+class TiaSound extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.channels = [new Channel(), new Channel()];
+    this.regs = [0, 0, 0, 0, 0, 0]; // AUDC0, AUDC1, AUDF0, AUDF1, AUDV0, AUDV1 ($15-$1A)
+    this.phase = 0;
+    this.time = 0;          // audio clock ticks played
+    this.queueEnd = -1;     // tick at which the next posted frame starts
+    this.events = [];       // [tick, register, value], in time order
+    this.silent = false;
+    this.dcIn = 0; this.dcOut = 0; // one-pole DC blocker: the TIA output only swings between 0 and AUDV
+    this.port.onmessage = ({ data }) => {
+      if (data.silent !== undefined) this.silent = data.silent;
+      if (!data.writes) return;
+      if (this.queueEnd < this.time || this.queueEnd > this.time + MAX_AHEAD) {
+        // a fresh start: anything still queued plays now, the new frame just ahead
+        for (const [, reg, value] of this.events) this.apply(reg, value);
+        this.events = [];
+        this.queueEnd = this.time + LEAD;
+      }
+      for (const [reg, value, cycle] of data.writes) this.events.push([this.queueEnd + cycle / CYCLES_PER_TICK, reg, value]);
+      this.queueEnd += data.cycles / CYCLES_PER_TICK;
+    };
+  }
+
+  apply(reg, value) {
+    this.regs[reg - 0x15] = value;
+    const r = this.regs;
+    this.channels[0].set(r[0], r[2], r[4]);
+    this.channels[1].set(r[1], r[3], r[5]);
+  }
+
+  process(inputs, outputs) {
+    const out = outputs[0][0];
+    const ticksPerSample = TIA_AUDIO_CLOCK / sampleRate;
+    for (let i = 0; i < out.length; i += 1) {
+      // average the TIA output over the clock ticks inside this sample
+      this.phase += ticksPerSample;
+      let sum = 0, n = 0;
+      while (this.phase >= 1) {
+        this.phase -= 1;
+        while (this.events.length && this.events[0][0] <= this.time) { const [, reg, value] = this.events.shift(); this.apply(reg, value); }
+        this.time += 1;
+        this.channels[0].tick();
+        this.channels[1].tick();
+        sum += this.channels[0].out + this.channels[1].out;
+        n += 1;
+      }
+      const level = n ? sum / n : this.channels[0].out + this.channels[1].out;
+      const x = this.silent ? 0 : (level / 30) * 0.6;
+      this.dcOut = x - this.dcIn + 0.995 * this.dcOut;
+      this.dcIn = x;
+      out[i] = this.dcOut;
+    }
+    for (let ch = 1; ch < outputs[0].length; ch += 1) outputs[0][ch].set(out);
+    return true;
+  }
+}
+
+registerProcessor('tia-sound', TiaSound);

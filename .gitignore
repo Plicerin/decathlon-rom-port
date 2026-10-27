@@ -1,0 +1,13 @@
+node_modules/
+*.log
+.DS_Store
+Thumbs.db
+# the cartridge ROM and anything assembled from the disassembly stay local
+rom/
+*.a26
+*.bin
+tools/dasm/
+tools/build/
+tools/out/
+*.zip
+tmp/
