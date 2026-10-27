@@ -24,6 +24,7 @@ export const ENHANCED_OPTIONS = {
   // in steps: 12 a second runs the 100 m in about 11.3 s, 16 in 10.2, 20 in 10.1
   runAssist: { label: 'Run assist', default: 0 },
   bests: { label: 'Keep personal bests', default: true },
+  stadium: { label: 'Stadium sound: starting gun and crowd', default: true },
 };
 
 // Run assist: holding one direction (key, half of the touch pad, stick) makes
@@ -37,6 +38,38 @@ export class RunAssist {
     this.phase += rate / 60;
     if (this.phase >= 1) { this.phase -= 1; this.right = !this.right; }
     return this.right ? 'right' : 'left';
+  }
+}
+
+// The stadium: when the starting gun fires and how loud the crowd is, from
+// the game's RAM each frame. In a race the distance run is $E4:$E5, which
+// reaches the same value at the line whatever the speed (measured): 258 in
+// the 100 m, 1026 in the 400 m, 281 in the hurdles, 5378 in the 1500 m. Each
+// athlete's race opens when the opening countdown ($F3, from $0F) reaches 0
+// (the clock then starts with the first push): the gun. The finish is where
+// the result countdown starts ($F3 above $0F): the roar.
+const DISTANCE = 0xe4 & 0x7f;
+const RACE_LENGTH = { 0: 258, 4: 1026, 5: 281, 9: 5378 };
+const TITLE = 0xc5 & 0x7f;     // nonzero on the title screen: no game under way
+export class Stadium {
+  constructor() { this.lastWait = 0; this.roar = 0; }
+  // after every frame: { gun: fire it now, crowd: 0-1 }
+  update(ram) {
+    const wait = ram[WAIT], length = RACE_LENGTH[ram[EVENT]];
+    const distance = ram[DISTANCE] * 256 + ram[DISTANCE + 1];
+    const gun = !!length && this.lastWait === 1 && wait === 0 && distance === 0;
+    if (length && wait > 0x0f && this.lastWait <= 0x0f && distance >= length * 0.95) this.roar = 1;
+    this.lastWait = wait;
+    this.roar *= 0.993; // about 1.6 s to halve
+    let crowd;
+    if (ram[TITLE]) crowd = 0;
+    else if (!length) crowd = 0.1;                       // field events: the stadium murmurs
+    else if (wait > 0x0f || distance === 0) crowd = 0.14; // before the start, and the result
+    else {
+      const p = Math.min(1, distance / length);           // the race: builds, then surges to the line
+      crowd = Math.min(1, 0.22 + 0.4 * p + Math.max(0, p - 0.75) * 1.6);
+    }
+    return { gun, crowd: Math.max(crowd, this.roar) };
   }
 }
 

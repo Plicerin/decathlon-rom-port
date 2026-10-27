@@ -11,7 +11,8 @@ import { DecathlonMachine } from './decathlonMachine.mjs';
 import { NTSC_PALETTE_RGB } from './palette.mjs';
 import { createTiaAudio } from './tiaAudio.mjs';
 import { readGamepad, gamepadEdges } from './gamepad.mjs';
-import { ENHANCED_OPTIONS, waiting, longWait, singleEvent, afterFrame, CONTINUE_PIXELS, MESSAGE_INK, RunAssist, Bests } from './enhanced.mjs';
+import { ENHANCED_OPTIONS, waiting, longWait, singleEvent, afterFrame, CONTINUE_PIXELS, MESSAGE_INK, RunAssist, Bests, Stadium } from './enhanced.mjs';
+import { createStadiumAudio } from './stadiumAudio.mjs';
 
 export const FIRST_LINE = 41;    // VBLANK goes off in frame line 41 and back on in line 231
 export const VISIBLE_LINES = 190;
@@ -57,6 +58,8 @@ export function mountPlayer(root) {
   const tapped = new Set();
   const touch = matchMedia('(pointer: coarse)').matches;
   const audio = createTiaAudio(new URL('./tiaSound.worklet.js', import.meta.url).href);
+  const stadiumAudio = createStadiumAudio(); // Enhanced: the starting gun and the crowd
+  const stadium = new Stadium();
   const screen = document.createElement('canvas');
   screen.width = 160;
   screen.height = VISIBLE_LINES;
@@ -111,7 +114,7 @@ export function mountPlayer(root) {
   }
   addEventListener('scroll', placeNote, { passive: true });
   addEventListener('resize', placeNote);
-  const silence = () => audio.setSilent(muted || paused || !started);
+  const silence = () => { audio.setSilent(muted || paused || !started); stadiumAudio.setSilent(muted || paused || !started); };
 
   // one frame; quiet: a fast-forwarded frame (neutral controls, its sound
   // writes collected into audioCarry instead of played)
@@ -136,6 +139,11 @@ export function mountPlayer(root) {
     game.bus.swchb = 0x08 | (on('reset') ? 0 : 0x01) | (on('select') ? 0 : 0x02);
     const fire = on('fire');
     game.runFrame();
+    // the stadium follows the game every frame; it is heard only in Enhanced with the option on
+    const crowd = stadium.update(game.bus.ram);
+    const loud = enhanced('stadium');
+    stadiumAudio.crowd(loud ? crowd.crowd : 0);
+    if (loud && crowd.gun && !quiet) stadiumAudio.gun();
     if (version === 'enhanced') {
       afterFrame(game.bus.ram, options);
       if (options.bests) {
@@ -222,6 +230,7 @@ export function mountPlayer(root) {
     setHint(startHint());
     showNote();
     await audio.start();
+    await stadiumAudio.start();
     silence();
   }
 
@@ -252,6 +261,7 @@ export function mountPlayer(root) {
 
   function setVolume(v) {
     audio.setVolume(v / 100);
+    stadiumAudio.setVolume(v / 100);
     volumeSliders.forEach((s) => { s.value = String(v); });
     store.set('decathlon-volume', String(v));
   }
@@ -387,7 +397,9 @@ export function mountPlayer(root) {
   versionButtons.forEach((b) => b.addEventListener('click', () => showBests()));
   showBests();
 
-  document.addEventListener('visibilitychange', () => (document.hidden ? audio.suspend() : audio.resume()));
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { audio.suspend(); stadiumAudio.suspend(); } else { audio.resume(); stadiumAudio.resume(); }
+  });
 
   step();
   draw();
