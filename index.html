@@ -115,18 +115,18 @@
       body.fs .tv { width: min(100%, calc((100dvh - 420px) * 640 / 380)); }
       body.fs .deck { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       /* the picture is already full width here: the room below goes to bigger thumb controls */
-      body.fs .rocker { width: 60vw; height: min(170px, calc(100dvh - 560px)); min-height: 100px; }
+      body.fs .rocker { width: min(60vw, calc(100vw - 170px)); height: min(170px, calc(100dvh - 560px)); min-height: 100px; }
       body.fs .fire { width: 110px; height: 110px; }
     }
     @media (pointer: coarse) and (orientation: portrait) and (max-width: 369px) {
       body.fs #status-line { min-height: calc(5 * 1.9em); }
-      body.fs .tv { width: min(100%, calc((100dvh - 470px) * 640 / 380)); }
+      body.fs .tv { width: min(100%, calc((100dvh - 380px) * 640 / 380)); }
     }
     @media (pointer: coarse) and (orientation: landscape) {
       body.fs .tv { width: min(calc(100% - 330px), calc((100dvh - 160px) * 640 / 380)); }
       body.fs .deck { width: min(calc(100% - 320px), 760px); gap: 4px; }
       body.fs .deck button { font-size: 11px; }
-      body.fs #status-line { position: absolute; z-index: 12; top: max(6px, env(safe-area-inset-top)); left: max(12px, env(safe-area-inset-left)); right: 270px; margin: 0; font-size: 10px; letter-spacing: 0; line-height: 1.3; text-align: left; }
+      body.fs #status-line { position: absolute; z-index: 12; top: max(6px, env(safe-area-inset-top)); left: max(12px, env(safe-area-inset-left)); right: 345px; margin: 0; font-size: 10px; letter-spacing: 0; line-height: 1.3; text-align: left; }
       body.fs #tc { pointer-events: none; top: 0; align-items: center; }
       body.fs #tc button { pointer-events: auto; opacity: 0.8; }
       body.fs .rocker { width: 170px; height: 84px; }
@@ -300,7 +300,7 @@
       </div>
       <div class="lp-card">
         <h3>Picking a game</h3>
-        <p>Each press of <b>Game Select</b> shows the next of 14 games: the whole decathlon for one, two, three or four athletes (the numbers 1 to 4 appear on the field), then each of the ten events on its own. <b>Game Reset</b> starts the game shown, and during a game starts it over from the 100 metres.</p>
+        <p>Each press of <b>Game Select</b> shows the next of 14 games: the whole decathlon for one, two, three or four athletes (the numbers 1 to 4 appear on the field), then each of the ten events on its own. <b>Game Reset</b> starts the game shown. During a decathlon it starts over from the 100 metres; during a single event it restarts that event.</p>
         <p>The athletes take turns on the one joystick: each event is run by athlete 1, then 2, and so on. A single event is always for <b>four athletes</b>, and the game waits for each one's turn, so on your own press Game Reset to run it again.</p>
       </div>
       <div class="lp-card">
@@ -317,15 +317,15 @@
           <li><b>100 metres:</b> run.</li>
           <li><b>Long jump:</b> run, and press the button as close to the scratch line as you dare: the later the take-off, the longer the jump. Over the line is a scratch.</li>
           <li><b>Shot put:</b> run at full speed and press the button before the scratch line; the speed at the press decides the distance.</li>
-          <li><b>High jump:</b> run, and press the button a stride before the bar (pressing at the bar is too late). A faster run-up clears higher bars.</li>
+          <li><b>High jump:</b> run, and press the button a stride before the bar (pressing at the bar is too late). The window is tiny, about three frames (a twentieth of a second). A faster run-up clears higher bars: about 16 pushes a second clears 2.2 m where 12 a second tops out at 2.0 m.</li>
           <li><b>400 metres:</b> run.</li>
-          <li><b>110 metre hurdles:</b> keep running the whole way, in the air too, and press the button a stride before each hurdle. Jumping too early is worse than not jumping.</li>
+          <li><b>110 metre hurdles:</b> keep running the whole way, in the air too, and press the button a stride before each hurdle. A little early is fine; too late, and you hit the hurdle, which is worse than not jumping at all.</li>
           <li><b>Discus:</b> as the shot put: full speed, then the button before the line.</li>
-          <li><b>Pole vault:</b> press the button early in the run-up to lower the pole (it plants itself in the box), keep running, and press it again at the top to let go. Pressing only at the box is too late.</li>
+          <li><b>Pole vault:</b> once the box is on screen, press the button to lower the pole (it plants itself in the box; lowered before the box appears, it fails), and keep running. Press again as the pole straightens to let go: the window is about a sixth of a second around the top, so don't wait to see the top. Pressing only at the box is too late.</li>
           <li><b>Javelin:</b> run, and throw as close to the scratch line as you dare: the closer, the longer.</li>
           <li><b>1500 metres:</b> there is no stamina to save. Keep a steady run; speed counts most on the final stretch, so sprint there.</li>
         </ol>
-        <p style="margin-top: 10px">In the field events each athlete gets three attempts in a row and the best counts. In the high jump and pole vault the bar goes up after each clearance, and three misses end the event. Holding the button never changes anything: only when you press it.</p>
+        <p style="margin-top: 10px">In the field events each athlete gets three attempts in a row and the best counts. In the high jump and pole vault the bar goes up after each clearance, and three misses at one height end the event (misses at lower heights don’t count toward it). Holding the button scores nothing extra: only the moment you press it counts. A button held down when a run is about to start keeps the athlete waiting until you let go.</p>
       </div>
     </div>
   </section>

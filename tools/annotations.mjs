@@ -14,9 +14,9 @@
 export const RAM = {
   0x80: ['event', 'the event, 0-9: 100 m, long jump, shot put, high jump, 400 m, 110 m hurdles, discus, pole vault, javelin, 1500 m; on the title screen the game Game Select shows'],
   0x81: ['frameCount', 'counts frames (+1 at each VSYNC, $F934); every 8th frame runs the title timer ($C5)'],
-  0x82: ['athletesLess1', 'athletes in the game minus 1: 0-3 (single events are always 3: four athletes)'],
+  0x82: ['athletesLess1', 'athletes in a decathlon minus 1: 0-3 for one to four athletes; 4 in the single events (always four athletes)'],
   0x83: ['athlete', 'whose turn it is, 0-3; Game Reset sets 0'],
-  0x85: ['controls', 'the controls this frame: bits 0-3 the joystick (SWCHA high nibble, ANDed with the low nibble: either port; 0 = pushed: bit 3 right, 2 left, 1 down, 0 up), bit 7 the button (0 = pressed; forced to 1 while $DB is 0)'],
+  0x85: ['controls', 'the controls this frame: bits 0-3 the joystick (SWCHA high nibble, ANDed with the low nibble, the second port, when INPT3 bit 7 is set: see ReadJoystick; 0 = pushed: bit 3 right, 2 left, 1 down, 0 up), bit 7 the button (0 = pressed; forced to 1 while $DB is 0)'],
   0x86: ['strideLatch', 'the left/right bits ($85 & $0C) last frame: a change between pushed states, or a push from neutral, is a stride ($D518)'],
   0x87: ['buttonLatch', 'the button bit ($85 & $80) last frame: a press is a change ($D1FE)'],
   0x95: ['pointsLo', 'points for the event just shown, BCD (low byte)'],
@@ -40,7 +40,7 @@ export const RIOT = { 0x280: 'SWCHA', 0x281: 'SWACNT', 0x282: 'SWCHB', 0x283: 'S
 export const LABELS = {
   0xF000: ['Start', 'power-on: clears the TIA, RAM and stack page ($00-$FF) and leaves the stack pointer at $FF, where JSR and RTS switch FE banks'],
   0xF039: ['PictureStart', 'waits for the vertical blank timer, then HMOVE and VBLANK off: the picture begins'],
-  0xF910: ['ReadJoystick', 'both joystick ports: the high nibble shifted down and, unless INPT3 bit 7 is clear (?), ANDed with the low nibble, so either joystick drives the athlete'],
+  0xF910: ['ReadJoystick', 'the left joystick (SWCHA high nibble, shifted down); the right one (low nibble) is ANDed in only when INPT3 bit 7 is set. This port model reads INPT0-3 as $80, so here both count (the page never moves the right one). On a console INPT3 bit 7 rises only as the paddle capacitor charges, which needs a paddle on that pin, so with joysticks the right port is probably ignored (?: inferred from the paddle circuit, not confirmed)'],
   0xF924: ['VerticalSync', 'end of frame: VBLANK and VSYNC on, three lines, frame counter $81'],
   0xF9AC: ['ConsoleSwitches', 'reads SWCHB: bit 0 Game Reset, bit 1 Game Select. No other console switch is read anywhere'],
   0xD000: ['ResetEvent', 'clears $C3-$F4 and the result digits, silences AUDV1: called at power-on, by Game Reset and Game Select, and when the next event starts ($F6E0, $F723)'],

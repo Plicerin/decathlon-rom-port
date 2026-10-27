@@ -26,11 +26,11 @@ const EVENTS = [
   ['100 metres', 'Run: move the joystick left and right as fast as you can.'],
   ['Long jump', 'Run, and press the button as close to the scratch line as you dare: the later the take-off, the longer the jump.'],
   ['Shot put', 'Run at full speed and press the button before the scratch line: the speed decides the distance.'],
-  ['High jump', 'Run, and press the button a stride before the bar. A faster run-up clears higher bars.'],
+  ['High jump', 'Run, and press the button a stride before the bar: the window is tiny. A faster run-up clears higher bars.'],
   ['400 metres', 'Run: keep moving the joystick left and right.'],
-  ['110 m hurdles', 'Keep running all the way, in the air too, and press the button a stride before each hurdle.'],
+  ['110 m hurdles', 'Keep running all the way, in the air too, and press the button a stride before each hurdle: a little early is fine, too late hits it.'],
   ['Discus', 'Run at full speed and press the button before the scratch line: the speed decides the distance.'],
-  ['Pole vault', 'Press the button early in the run-up to lower the pole (it plants itself), keep running, and press again at the top to let go.'],
+  ['Pole vault', 'Once the box is on screen, press the button to lower the pole (it plants itself), keep running, and press again as the pole straightens: don\'t wait to see the top.'],
   ['Javelin', 'Run, and throw as close to the scratch line as you dare: the closer, the longer.'],
   ['1500 metres', 'There is no stamina: keep a steady run, then sprint the final stretch, where speed counts most.'],
 ];
@@ -48,6 +48,8 @@ export function mountPlayer(root) {
 
   const game = new DecathlonMachine();
   const held = new Set();
+  // keys down, by key code: two keys for one direction (D and ArrowRight) hold it until both are up
+  const keysDown = new Set();
   // a key or button released before the next frame still counts for that frame
   const tapped = new Set();
   const touch = matchMedia('(pointer: coarse)').matches;
@@ -98,7 +100,7 @@ export function mountPlayer(root) {
   const silence = () => audio.setSilent(muted || paused || !started);
 
   function step() {
-    const on = (control) => held.has(control) || tapped.has(control) || !!down[control] || !!(PAD[control] ? !padWake && pad?.[PAD[control]] : pad?.[control]);
+    const on = (control) => held.has(control) || [...keysDown].some((code) => KEYS[code] === control) || tapped.has(control) || !!down[control] || !!(PAD[control] ? !padWake && pad?.[PAD[control]] : pad?.[control]);
     let swcha = 0xff;
     // a joystick can't push left and right at once: both together count as
     // neither (the game counts every push from neutral as a stride, so holding
@@ -214,7 +216,7 @@ export function mountPlayer(root) {
 
   canvas.addEventListener('keydown', (event) => {
     const control = KEYS[event.code];
-    if (control) { event.preventDefault(); held.add(control); tapped.add(control); }
+    if (control) { event.preventDefault(); keysDown.add(event.code); tapped.add(control); }
     if (event.code === 'Enter') { event.preventDefault(); if (!started) play(); down.reset = true; tapped.add('reset'); }
     if (event.code === 'KeyX') { down.select = true; tapped.add('select'); }
     if (event.code === 'KeyP') togglePause();
@@ -222,11 +224,11 @@ export function mountPlayer(root) {
   });
   canvas.addEventListener('keyup', (event) => {
     const control = KEYS[event.code];
-    if (control) held.delete(control);
+    if (control) keysDown.delete(event.code);
     if (event.code === 'Enter') down.reset = false;
     if (event.code === 'KeyX') down.select = false;
   });
-  canvas.addEventListener('blur', () => { held.clear(); down.select = down.reset = false; showNote(); });
+  canvas.addEventListener('blur', () => { held.clear(); keysDown.clear(); down.select = down.reset = false; showNote(); });
   canvas.addEventListener('focus', showNote);
   canvas.addEventListener('pointerdown', () => { if (!started) play(); });
 

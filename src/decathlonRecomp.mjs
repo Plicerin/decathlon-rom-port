@@ -1356,7 +1356,7 @@ export function run(c, bus, maxCycles = 400000) {
       case 0x090b: c.cycles += 2; if ((c.p & 0x02)) { c.cycles += 1; pc = hi | 0x910; continue; } // f90b beq ReadJoystick
       case 0x090d: c.cycles += 3; pc = 0xf884; continue; // f90d jmp LF884
       // ---- end of frame: joystick, vertical sync, title timer, console switches
-      // ReadJoystick -- both joystick ports: the high nibble shifted down and, unless INPT3 bit 7 is clear (?), ANDed with the low nibble, so either joystick drives the athlete
+      // ReadJoystick -- the left joystick (SWCHA high nibble, shifted down); the right one (low nibble) is ANDed in only when INPT3 bit 7 is set. This port model reads INPT0-3 as $80, so here both count (the page never moves the right one). On a console INPT3 bit 7 rises only as the paddle capacitor charges, which needs a paddle on that pin, so with joysticks the right port is probably ignored (?: inferred from the paddle circuit, not confirmed)
       case 0x0910: c.cycles += 4; c.a = c.setNZ(c.read(0x0280)); // f910 lda SWCHA
       case 0x0913: c.cycles += 2; c.a = c.lsr(c.a); // f913 lsr
       case 0x0914: c.cycles += 2; c.a = c.lsr(c.a); // f914 lsr

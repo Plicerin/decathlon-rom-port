@@ -80,9 +80,9 @@ T1024T      = $0297
 ; RAM
 event           = $80    ; the event, 0-9: 100 m, long jump, shot put, high jump, 400 m, 110 m hurdles, discus, pole vault, javelin, 1500 m; on the title screen the game Game Select shows
 frameCount      = $81    ; counts frames (+1 at each VSYNC, $F934); every 8th frame runs the title timer ($C5)
-athletesLess1   = $82    ; athletes in the game minus 1: 0-3 (single events are always 3: four athletes)
+athletesLess1   = $82    ; athletes in a decathlon minus 1: 0-3 for one to four athletes; 4 in the single events (always four athletes)
 athlete         = $83    ; whose turn it is, 0-3; Game Reset sets 0
-controls        = $85    ; the controls this frame: bits 0-3 the joystick (SWCHA high nibble, ANDed with the low nibble: either port; 0 = pushed: bit 3 right, 2 left, 1 down, 0 up), bit 7 the button (0 = pressed; forced to 1 while $DB is 0)
+controls        = $85    ; the controls this frame: bits 0-3 the joystick (SWCHA high nibble, ANDed with the low nibble, the second port, when INPT3 bit 7 is set: see ReadJoystick; 0 = pushed: bit 3 right, 2 left, 1 down, 0 up), bit 7 the button (0 = pressed; forced to 1 while $DB is 0)
 strideLatch     = $86    ; the left/right bits ($85 & $0C) last frame: a change between pushed states, or a push from neutral, is a stride ($D518)
 buttonLatch     = $87    ; the button bit ($85 & $80) last frame: a press is a change ($D1FE)
 pointsLo        = $95    ; points for the event just shown, BCD (low byte)
@@ -1437,7 +1437,7 @@ LF901:
     jmp LF884                 ; $F90D
 
 ; ---- end of frame: joystick, vertical sync, title timer, console switches
-ReadJoystick:  ; both joystick ports: the high nibble shifted down and, unless INPT3 bit 7 is clear (?), ANDed with the low nibble, so either joystick drives the athlete
+ReadJoystick:  ; the left joystick (SWCHA high nibble, shifted down); the right one (low nibble) is ANDed in only when INPT3 bit 7 is set. This port model reads INPT0-3 as $80, so here both count (the page never moves the right one). On a console INPT3 bit 7 rises only as the paddle capacitor charges, which needs a paddle on that pin, so with joysticks the right port is probably ignored (?: inferred from the paddle circuit, not confirmed)
     lda SWCHA                 ; $F910
     lsr                       ; $F913
     lsr                       ; $F914
