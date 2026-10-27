@@ -968,9 +968,9 @@ export function run(c, bus, maxCycles = 400000) {
       case 0x0673: c.cycles += 5; c.rmw(0xf1, (v) => c.asl(v)); // f673 asl $F1
       case 0x0675: c.cycles += 2; c.p |= 0x01; // f675 sec
       case 0x0676: c.cycles += 5; c.rmw(0xf1, (v) => c.ror(v)); // f676 ror $F1
-      case 0x0678: c.cycles += 3; c.a = c.setNZ(c.read(0x95)); // f678 lda pointsLo
+      case 0x0678: c.cycles += 3; c.a = c.setNZ(c.read(0x95)); // f678 lda pointsHi
       case 0x067a: c.cycles += 3; c.write(0xc6, c.a); // f67a sta $C6
-      case 0x067c: c.cycles += 3; c.a = c.setNZ(c.read(0x96)); // f67c lda pointsHi
+      case 0x067c: c.cycles += 3; c.a = c.setNZ(c.read(0x96)); // f67c lda pointsLo
       case 0x067e: c.cycles += 3; c.write(0xc7, c.a); // f67e sta $C7
       case 0x0680: c.cycles += 3; c.a = c.setNZ(c.read(0x83)); // f680 lda athlete
       case 0x0682: c.cycles += 2; c.a = c.asl(c.a); // f682 asl
@@ -983,10 +983,10 @@ export function run(c, bus, maxCycles = 400000) {
       case 0x068d: c.cycles += 4; c.write((0x97 + c.x) & 0xff, c.a); if (bus.frame !== frame) { c.pc = hi | 0x68f; return true; } // f68d sta totals,x
       // LF68F
       case 0x068f: c.cycles += 2; c.p &= ~0x01; // f68f clc
-      case 0x0690: c.cycles += 3; c.adc(c.read(0x96)); // f690 adc pointsHi
+      case 0x0690: c.cycles += 3; c.adc(c.read(0x96)); // f690 adc pointsLo
       case 0x0692: c.cycles += 4; c.write((0x98 + c.x) & 0xff, c.a); if (bus.frame !== frame) { c.pc = hi | 0x694; return true; } // f692 sta $98,x
       case 0x0694: c.cycles += 4; c.a = c.setNZ(c.read((0x97 + c.x) & 0xff)); // f694 lda totals,x
-      case 0x0696: c.cycles += 3; c.adc(c.read(0x95)); // f696 adc pointsLo
+      case 0x0696: c.cycles += 3; c.adc(c.read(0x95)); // f696 adc pointsHi
       case 0x0698: c.cycles += 4; c.write((0x97 + c.x) & 0xff, c.a); if (bus.frame !== frame) { c.pc = hi | 0x69a; return true; } // f698 sta totals,x
       case 0x069a: c.cycles += 2; c.p &= ~0x08; // f69a cld
       case 0x069b: c.cycles += 2; if (!(c.p & 0x01)) { c.cycles += 1; pc = hi | 0x6a4; continue; } // f69b bcc LF6A4
@@ -1799,8 +1799,8 @@ export function run(c, bus, maxCycles = 400000) {
       case 0x1120: c.cycles += 4; c.a = c.setNZ(c.read(c.indexed(0xdb49, c.y))); // d120 lda $DB49,y
       case 0x1123: c.cycles += 3; c.write(0x90, c.a); // d123 sta $90
       case 0x1125: c.cycles += 2; c.a = c.setNZ(0x00); // d125 lda #$00
-      case 0x1127: c.cycles += 3; c.write(0x95, c.a); // d127 sta pointsLo
-      case 0x1129: c.cycles += 3; c.write(0x96, c.a); // d129 sta pointsHi
+      case 0x1127: c.cycles += 3; c.write(0x95, c.a); // d127 sta pointsHi
+      case 0x1129: c.cycles += 3; c.write(0x96, c.a); // d129 sta pointsLo
       // LD12B
       case 0x112b: c.cycles += 4; c.a = c.setNZ(c.read(c.indexed(0xdeea, c.x))); // d12b lda $DEEA,x
       case 0x112e: c.cycles += 3; c.write(0xf4, c.a); // d12e sta $F4
@@ -1830,10 +1830,10 @@ export function run(c, bus, maxCycles = 400000) {
       case 0x1156: c.cycles += 3; c.write(0xe2, c.x); // d156 stx $E2 (traced, not executed)
       // LD158
       case 0x1158: c.cycles += 3; c.write(0xc6, c.a); // d158 sta $C6
-      case 0x115a: c.cycles += 3; c.write(0x95, c.a); // d15a sta pointsLo
+      case 0x115a: c.cycles += 3; c.write(0x95, c.a); // d15a sta pointsHi
       case 0x115c: c.cycles += 4; c.a = c.setNZ(c.read(c.indexed(0xdb72, c.y))); // d15c lda $DB72,y
       case 0x115f: c.cycles += 3; c.write(0xc7, c.a); // d15f sta $C7
-      case 0x1161: c.cycles += 3; c.write(0x96, c.a); // d161 sta pointsHi
+      case 0x1161: c.cycles += 3; c.write(0x96, c.a); // d161 sta pointsLo
       // LD163
       case 0x1163: c.cycles += 2; c.a = c.setNZ(0xab); // d163 lda #$AB
       case 0x1165: c.cycles += 3; c.write(0x91, c.a); // d165 sta $91
@@ -1872,14 +1872,14 @@ export function run(c, bus, maxCycles = 400000) {
       case 0x119a: c.cycles += 5; c.rmw(0xea, (v) => c.setNZ((v + 1) & 0xff)); // d19a inc $EA
       // LD19C
       case 0x119c: c.cycles += 3; c.y = c.setNZ(c.read(0xc7)); // d19c ldy $C7
-      case 0x119e: c.cycles += 3; c.cmp(c.a, c.read(0x95)); // d19e cmp pointsLo
+      case 0x119e: c.cycles += 3; c.cmp(c.a, c.read(0x95)); // d19e cmp pointsHi
       case 0x11a0: c.cycles += 2; if (!(c.p & 0x01)) { c.cycles += 1; pc = hi | 0x1ac; continue; } // d1a0 bcc LD1AC
       case 0x11a2: c.cycles += 2; if (!(c.p & 0x02)) { c.cycles += 1; pc = hi | 0x1a8; continue; } // d1a2 bne LD1A8
-      case 0x11a4: c.cycles += 3; c.cmp(c.y, c.read(0x96)); // d1a4 cpy pointsHi
+      case 0x11a4: c.cycles += 3; c.cmp(c.y, c.read(0x96)); // d1a4 cpy pointsLo
       case 0x11a6: c.cycles += 2; if (!(c.p & 0x01)) { c.cycles += 1; pc = hi | 0x1ac; continue; } // d1a6 bcc LD1AC
       // LD1A8
-      case 0x11a8: c.cycles += 3; c.write(0x95, c.a); // d1a8 sta pointsLo
-      case 0x11aa: c.cycles += 3; c.write(0x96, c.y); // d1aa sty pointsHi
+      case 0x11a8: c.cycles += 3; c.write(0x95, c.a); // d1a8 sta pointsHi
+      case 0x11aa: c.cycles += 3; c.write(0x96, c.y); // d1aa sty pointsLo
       // LD1AC
       case 0x11ac: c.cycles += 6; bus.feAccess((hi | 0x1ad) & 0x1fff, 0); c.read(0x100 | c.s); pc = c.pull() | (c.pull() << 8); bus.feAccess(pc & 0x1fff, 0); pc = (pc + 1) & 0xffff; continue; // d1ac rts
       // LD1AD

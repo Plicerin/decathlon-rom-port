@@ -85,9 +85,9 @@ athlete         = $83    ; whose turn it is, 0-3; Game Reset sets 0
 controls        = $85    ; the controls this frame: bits 0-3 the joystick (SWCHA high nibble, ANDed with the low nibble, the second port, when INPT3 bit 7 is set: see ReadJoystick; 0 = pushed: bit 3 right, 2 left, 1 down, 0 up), bit 7 the button (0 = pressed; forced to 1 while $DB is 0)
 strideLatch     = $86    ; the left/right bits ($85 & $0C) last frame: a change between pushed states, or a push from neutral, is a stride ($D518)
 buttonLatch     = $87    ; the button bit ($85 & $80) last frame: a press is a change ($D1FE)
-pointsLo        = $95    ; points for the event just shown, BCD (low byte)
-pointsHi        = $96    ; points shown, BCD (high byte)
-totals          = $97    ; running totals, two BCD bytes per athlete from $97 ($97, $99, $9B, $9D); Game Select fills $97-$9F with $AA (blank digits)
+pointsHi        = $95    ; points for the event just shown, BCD, high byte (added to the high byte of the total at $F696)
+pointsLo        = $96    ; points shown, BCD, low byte
+totals          = $97    ; running totals, two BCD bytes per athlete, high then low ($97/$98, $99/$9A, $9B/$9C, $9D/$9E); Game Select fills $97-$9F with $AA (blank digits)
 idleTimer       = $C3    ; cleared whenever the joystick is pushed (any direction, $F99A); counts up while idle. Up and down matter only here: they keep the game out of its idle state
 titleMode       = $C4    ; bit 7 set at power-on ($F011) and when the title timer runs out ($F971): the title/demo state; Game Reset clears it. Bits 0-2 count every 256 frames
 titleTimer      = $C5    ; nonzero on the title screen and after Game Select (counts down every 8 frames, $F963; at 0 the game returns to the title: $C4 bit 7, scores cleared); 0 from Game Reset through the game
@@ -1048,9 +1048,9 @@ LF66F:
     asl $F1                   ; $F673
     sec                       ; $F675
     ror $F1                   ; $F676
-    lda pointsLo              ; $F678
+    lda pointsHi              ; $F678
     sta $C6                   ; $F67A
-    lda pointsHi              ; $F67C
+    lda pointsLo              ; $F67C
     sta $C7                   ; $F67E
     lda athlete               ; $F680
     asl                       ; $F682
@@ -1063,10 +1063,10 @@ LF66F:
     sta totals,x              ; $F68D
 LF68F:
     clc                       ; $F68F
-    adc pointsHi              ; $F690
+    adc pointsLo              ; $F690
     sta $98,x                 ; $F692
     lda totals,x              ; $F694
-    adc pointsLo              ; $F696
+    adc pointsHi              ; $F696
     sta totals,x              ; $F698
     cld                       ; $F69A
     bcc LF6A4                 ; $F69B
@@ -1967,8 +1967,8 @@ LD10E:
     lda $DB49,y               ; $D120
     sta $90                   ; $D123
     lda #$00                  ; $D125
-    sta pointsLo              ; $D127
-    sta pointsHi              ; $D129
+    sta pointsHi              ; $D127
+    sta pointsLo              ; $D129
 LD12B:
     lda $DEEA,x               ; $D12B
     sta $F4                   ; $D12E
@@ -1998,10 +1998,10 @@ LD149:
     stx $E2                   ; $D156 (not executed in the coverage run)
 LD158:
     sta $C6                   ; $D158
-    sta pointsLo              ; $D15A
+    sta pointsHi              ; $D15A
     lda $DB72,y               ; $D15C
     sta $C7                   ; $D15F
-    sta pointsHi              ; $D161
+    sta pointsLo              ; $D161
 LD163:
     lda #$AB                  ; $D163
     sta $91                   ; $D165
@@ -2040,14 +2040,14 @@ LD18E:
     inc $EA                   ; $D19A
 LD19C:
     ldy $C7                   ; $D19C
-    cmp pointsLo              ; $D19E
+    cmp pointsHi              ; $D19E
     bcc LD1AC                 ; $D1A0
     bne LD1A8                 ; $D1A2
-    cpy pointsHi              ; $D1A4
+    cpy pointsLo              ; $D1A4
     bcc LD1AC                 ; $D1A6
 LD1A8:
-    sta pointsLo              ; $D1A8
-    sty pointsHi              ; $D1AA
+    sta pointsHi              ; $D1A8
+    sty pointsLo              ; $D1AA
 LD1AC:
     rts                       ; $D1AC
 LD1AD:

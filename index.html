@@ -228,6 +228,25 @@
     .deck button[data-press]:active { border-color: var(--lp-robot); background: #1a2448; }
     .vol { display: inline-flex; align-items: center; gap: 6px; font: 11px ui-monospace, "Cascadia Mono", monospace; color: var(--lp-ink-2); }
     .vol input { width: 90px; accent-color: var(--lp-accent); }
+    /* the version switch: Original (the cartridge as it is) or Enhanced (its options) */
+    .lp-version { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; width: min(760px, 100%); margin: 12px auto 0; padding: 10px 12px; border: 1px solid var(--lp-line); border-radius: 12px; background: var(--lp-panel-2); font-size: 12.5px; color: var(--lp-ink-2); }
+    .lp-version .seg { display: inline-flex; border: 1px solid var(--lp-line-2); border-radius: 999px; overflow: hidden; }
+    .lp-version .seg button { font: 600 12px/1 ui-sans-serif, system-ui, sans-serif; padding: 7px 14px 8px; border: 0; background: transparent; color: var(--lp-ink-2); cursor: pointer; }
+    .lp-version .seg button[aria-pressed="true"] { background: var(--lp-accent); color: #fff; }
+    .lp-version .opts { display: flex; flex-wrap: wrap; gap: 6px 16px; }
+    .lp-version .opts[hidden] { display: none; }
+    .lp-version label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+    .lp-version input { accent-color: var(--lp-accent); }
+    .lp-version select { font: 12px ui-sans-serif, system-ui, sans-serif; padding: 3px 6px; border-radius: 6px; border: 1px solid var(--lp-line-2); background: var(--lp-panel); color: var(--lp-ink); }
+    body.fs .lp-version, body.fs .lp-bests { display: none; }
+    .lp-bests { width: min(760px, 100%); margin: 10px auto 0; padding: 10px 12px; border: 1px solid var(--lp-line); border-radius: 12px; background: var(--lp-panel-2); font-size: 12.5px; color: var(--lp-ink-2); display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; justify-content: space-between; }
+    .lp-bests[hidden] { display: none; }
+    .lp-bests table { border-collapse: collapse; flex: 1 1 320px; }
+    .lp-bests th, .lp-bests td { padding: 3px 8px; text-align: right; font-variant-numeric: tabular-nums; border-top: 1px solid rgba(255, 255, 255, 0.05); }
+    .lp-bests thead th { color: var(--lp-ink-3); font-weight: 600; border-top: 0; }
+    .lp-bests th:first-child { text-align: left; font-weight: 500; color: var(--lp-ink); }
+    .lp-bests td.new { color: var(--lp-robot); font-weight: 700; }
+    .lp-bests button { font: 11px ui-monospace, "Cascadia Mono", monospace; padding: 5px 11px; border-radius: 8px; border: 1px solid var(--lp-line); background: var(--lp-panel); color: var(--lp-ink-2); cursor: pointer; }
     ol.lp-steps { margin: 0 0 0 20px; font-size: 13.5px; line-height: 1.6; }
     ol.lp-steps li { margin: 3px 0; }
 </style>
@@ -282,6 +301,31 @@
     </div>
   </div>
 
+  <div class="lp-version">
+    <div class="seg" role="group" aria-label="Version">
+      <button type="button" data-version="original" aria-pressed="true">Original</button>
+      <button type="button" data-version="enhanced" aria-pressed="false">Enhanced</button>
+    </div>
+    <div class="opts" data-options hidden>
+      <label><input type="checkbox" data-option="skipWaits"> Skip the waits: press the button to move on</label>
+      <label><input type="checkbox" data-option="soloEvents"> Single events for one athlete</label>
+      <label>Run assist <select data-option="runAssist" aria-label="Run assist">
+        <option value="0">off</option>
+        <option value="12">steady: 12 pushes a second</option>
+        <option value="16">fast: 16 a second</option>
+        <option value="20">fastest: 20 a second</option>
+      </select></label>
+      <label><input type="checkbox" data-option="bests"> Keep personal bests</label>
+    </div>
+  </div>
+  <div class="lp-bests" data-bests hidden>
+    <table>
+      <thead><tr><th>Personal bests (points)</th><th>Yours</th><th>With run assist</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <button type="button" data-clear-bests>Clear</button>
+  </div>
+
   <section class="panel lp" id="how">
     <h2>How to play</h2>
     <p class="lp-lead">Ten events in a row, scored in points: the faster you run and the further or higher you jump and throw, the more you score. <b>Running is the joystick moved left and right, again and again</b>: the faster you change direction, the faster your athlete runs. Every event starts with a run.</p>
@@ -302,6 +346,11 @@
         <h3>Picking a game</h3>
         <p>Each press of <b>Game Select</b> shows the next of 14 games: the whole decathlon for one, two, three or four athletes (the numbers 1 to 4 appear on the field), then each of the ten events on its own. <b>Game Reset</b> starts the game shown. During a decathlon it starts over from the 100 metres; during a single event it restarts that event.</p>
         <p>The athletes take turns on the one joystick: each event is run by athlete 1, then 2, and so on. A single event is always for <b>four athletes</b>, and the game waits for each one's turn, so on your own press Game Reset to run it again.</p>
+      </div>
+      <div class="lp-card">
+        <h3>Original or Enhanced</h3>
+        <p><b>Original</b> is the cartridge exactly as it plays, checked against the ROM frame by frame (released as <a href="https://github.com/Plicerin/decathlon-rom-port/releases/tag/original-1.0">original-1.0</a>).</p>
+        <p><b>Enhanced</b> runs the same game with quality-of-life options you can switch on and off under the screen: press the button to skip the waits after a result and between attempts (the waits' frames still run, fast, so scoring is untouched), single events for one athlete instead of four, <b>run assist</b> (hold one direction and the athlete runs at a steady 12, 16 or 20 pushes a second, for keyboards, phones and anyone who can't waggle), and <b>personal bests</b>: the game's own points for each event and your best decathlon total, kept in this browser, with run-assisted scores kept apart. Your choices are remembered too.</p>
       </div>
       <div class="lp-card">
         <h3>Running</h3>

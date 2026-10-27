@@ -4,11 +4,14 @@
 // pad to rub or tap and a Fire button,
 // the TIA sound worklet, and the two console buttons the cartridge reads:
 // Game Select and Game Reset (it ignores Color/B&W and the difficulty switches).
+// Two versions: Original (the cartridge as it is) and Enhanced (enhanced.mjs:
+// quality-of-life options layered on the same translated game).
 // Mount with mountPlayer(root); root holds the canvas and the [data-*] controls.
 import { DecathlonMachine } from './decathlonMachine.mjs';
 import { NTSC_PALETTE_RGB } from './palette.mjs';
 import { createTiaAudio } from './tiaAudio.mjs';
 import { readGamepad, gamepadEdges } from './gamepad.mjs';
+import { ENHANCED_OPTIONS, waiting, longWait, singleEvent, afterFrame, CONTINUE_PIXELS, MESSAGE_INK, RunAssist, Bests } from './enhanced.mjs';
 
 export const FIRST_LINE = 41;    // VBLANK goes off in frame line 41 and back on in line 231
 export const VISIBLE_LINES = 190;
@@ -63,6 +66,16 @@ export function mountPlayer(root) {
   let started = false, paused = false, muted = false;
   const down = { select: false, reset: false };
   let last = 0, acc = 0, pad = null, frames = 0, padShown = false, padWake = false, frameStart = 0;
+  // the version: 'original' or 'enhanced', and Enhanced's options
+  let version = store.get('decathlon-version') === 'enhanced' ? 'enhanced' : 'original';
+  const options = Object.fromEntries(Object.entries(ENHANCED_OPTIONS).map(([k, o]) => [k, o.default]));
+  try { Object.assign(options, JSON.parse(store.get('decathlon-enhanced') ?? '{}')); } catch { /* defaults */ }
+  const enhanced = (option) => version === 'enhanced' && options[option];
+  let lastFire = false, skipping = false;
+  const assist = new RunAssist();
+  let assistUsed = false; // run assist made pushes since this athlete's last score
+  let bests;
+  try { bests = new Bests(JSON.parse(store.get('decathlon-bests') ?? 'null')); } catch { bests = new Bests(null); }
 
   const setHint = (text) => { if (hint && hint.textContent !== text) hint.textContent = text; };
   const name = (what) => {
@@ -78,7 +91,8 @@ export function mountPlayer(root) {
     if (ram[0xc5 & 0x7f]) return '';
     const ev = EVENTS[ram[0x80 & 0x7f]];
     if (!ev) return '';
-    const who = ram[0x82 & 0x7f] ? `Player ${ram[0x83 & 0x7f] + 1}, ` : '';
+    const solo = enhanced('soloEvents') && singleEvent(ram);
+    const who = ram[0x82 & 0x7f] && !solo ? `Player ${ram[0x83 & 0x7f] + 1}, ` : '';
     return `${who}${ev[0]}: ${ev[1]}`;
   }
   function showNote() {
@@ -99,13 +113,19 @@ export function mountPlayer(root) {
   addEventListener('resize', placeNote);
   const silence = () => audio.setSilent(muted || paused || !started);
 
-  function step() {
-    const on = (control) => held.has(control) || [...keysDown].some((code) => KEYS[code] === control) || tapped.has(control) || !!down[control] || !!(PAD[control] ? !padWake && pad?.[PAD[control]] : pad?.[control]);
+  // one frame; quiet: a fast-forwarded frame (neutral controls, its sound
+  // writes collected into audioCarry instead of played)
+  let audioCarry = null;
+  function step(quiet = false) {
+    const on = (control) => !quiet && (held.has(control) || [...keysDown].some((code) => KEYS[code] === control) || tapped.has(control) || !!down[control] || !!(PAD[control] ? !padWake && pad?.[PAD[control]] : pad?.[control]));
     let swcha = 0xff;
     // a joystick can't push left and right at once: both together count as
     // neither (the game counts every push from neutral as a stride, so holding
     // one and tapping the other would otherwise double the running rate)
-    const left = on('left'), right = on('right');
+    let left = on('left'), right = on('right');
+    // Enhanced run assist: one direction held makes the pushes at the chosen rate
+    const rate = version === 'enhanced' ? Number(options.runAssist) || 0 : 0;
+    if (rate && left !== right) { const dir = assist.next(rate); left = dir === 'left'; right = dir === 'right'; assistUsed = true; }
     if (right && !left) swcha &= ~0x80;
     if (left && !right) swcha &= ~0x40;
     if (on('down')) swcha &= ~0x20;
@@ -114,11 +134,31 @@ export function mountPlayer(root) {
     game.bus.inpt4 = on('fire') ? 0x00 : 0x80;
     // SWCHB: bit 0 Game Reset, bit 1 Game Select (low = pressed); Color, both difficulties B
     game.bus.swchb = 0x08 | (on('reset') ? 0 : 0x01) | (on('select') ? 0 : 0x02);
+    const fire = on('fire');
     game.runFrame();
+    if (version === 'enhanced') {
+      afterFrame(game.bus.ram, options);
+      if (options.bests) {
+        const beaten = bests.update(game.bus.ram, assistUsed);
+        if (bests.lastWait === 0xbf) assistUsed = false; // scored: the next athlete or event starts clean
+        if (beaten) { store.set('decathlon-bests', JSON.stringify(bests)); showBests(beaten); }
+      }
+    }
+    // Enhanced: a press of the button during a wait fast-forwards it
+    if (!quiet && fire && !lastFire && enhanced('skipWaits') && longWait(game.bus.ram)) skipping = true;
+    if (!quiet) lastFire = fire;
     tapped.clear();
     // the frame's sound register writes ($15-$1A) with their cycles, and the frame's length
     const bus = game.bus;
-    audio.frame(bus.lastFrameWrites.filter((w) => w.reg >= 0x15 && w.reg <= 0x1a).map((w) => [w.reg, w.value, w.cycle]), bus.frameStart - frameStart || 262 * 76);
+    const writes = bus.lastFrameWrites.filter((w) => w.reg >= 0x15 && w.reg <= 0x1a).map((w) => [w.reg, w.value, w.cycle]);
+    if (quiet) {
+      // keep only each register's last value, played when the fast-forward ends
+      audioCarry ??= new Map();
+      for (const [reg, value] of writes) audioCarry.set(reg, value);
+    } else {
+      if (audioCarry) { writes.unshift(...[...audioCarry].map(([reg, value]) => [reg, value, 0])); audioCarry = null; }
+      audio.frame(writes, bus.frameStart - frameStart || 262 * 76);
+    }
     frameStart = bus.frameStart;
     frames += 1;
     if (started && frames % 30 === 0) setHint(eventHint() || startHint());
@@ -135,6 +175,14 @@ export function mountPlayer(root) {
         const rgb = NTSC_PALETTE_RGB[(row[x] >> 1) & 0x7f];
         const o = (y * 160 + x) * 4;
         data[o] = rgb >> 16; data[o + 1] = (rgb >> 8) & 0xff; data[o + 2] = rgb & 0xff; data[o + 3] = 255;
+      }
+    }
+    // Enhanced: during a skippable wait, PRESS TO CONTINUE in the game's text row
+    if (enhanced('skipWaits') && !skipping && longWait(game.bus.ram)) {
+      const rgb = NTSC_PALETTE_RGB[(MESSAGE_INK >> 1) & 0x7f];
+      for (const [x, y] of CONTINUE_PIXELS) {
+        const o = ((y - FIRST_LINE) * 160 + x) * 4;
+        data[o] = rgb >> 16; data[o + 1] = (rgb >> 8) & 0xff; data[o + 2] = rgb & 0xff;
       }
     }
     screenCtx.putImageData(image, 0, 0);
@@ -156,6 +204,12 @@ export function mountPlayer(root) {
     if (!paused && !document.hidden) {
       acc += dt;
       while (acc >= FRAME_MS) { step(); acc -= FRAME_MS; }
+      // Enhanced skip: run the wait's frames, as fast as about 10 ms a display frame allows
+      if (skipping) {
+        const until = performance.now() + 10;
+        while (waiting(game.bus.ram) && performance.now() < until) step(true);
+        if (!waiting(game.bus.ram)) { skipping = false; setHint(eventHint() || startHint()); }
+      }
     }
     draw();
     requestAnimationFrame(frame);
@@ -281,6 +335,58 @@ export function mountPlayer(root) {
     for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) rocker.addEventListener(ev, (event) => { fingers.delete(event.pointerId); show(); });
   }
 
+  // the version switch (Original / Enhanced) and Enhanced's options, remembered in this browser
+  const versionButtons = root.querySelectorAll('[data-version]');
+  const optionsPanel = root.querySelector('[data-options]');
+  const showVersion = () => {
+    versionButtons.forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.version === version)));
+    if (optionsPanel) optionsPanel.hidden = version !== 'enhanced';
+    root.dataset.mode = version;
+  };
+  versionButtons.forEach((b) => b.addEventListener('click', () => {
+    version = b.dataset.version;
+    store.set('decathlon-version', version);
+    if (version !== 'enhanced') skipping = false;
+    showVersion();
+    if (started) setHint(eventHint() || startHint());
+    refocus();
+  }));
+  root.querySelectorAll('[data-option]').forEach((box) => {
+    const key = box.dataset.option;
+    const isCheck = box.type === 'checkbox';
+    if (isCheck) box.checked = !!options[key]; else box.value = String(options[key]);
+    box.addEventListener('change', () => {
+      options[key] = isCheck ? box.checked : Number(box.value);
+      if (key === 'bests') showBests();
+      store.set('decathlon-enhanced', JSON.stringify(options));
+      if (key === 'skipWaits' && !box.checked) skipping = false;
+      refocus();
+    });
+  });
+  showVersion();
+
+  // the personal bests panel: points per event and the decathlon total, yours and with run assist
+  const bestsPanel = root.querySelector('[data-bests]');
+  function showBests(beaten = null) {
+    if (!bestsPanel) return;
+    bestsPanel.hidden = !(version === 'enhanced' && options.bests);
+    const cell = (n, isNew) => `<td${isNew ? ' class="new"' : ''}>${n ? n.toLocaleString('en-US') : '–'}</td>`;
+    const row = (name, i) => {
+      const fresh = (assisted) => beaten && beaten.assisted === assisted && (i === 'total' ? beaten.total : beaten.event === i);
+      const pick = (t) => (i === 'total' ? t.total : t.events[i]);
+      return `<tr><th>${name}</th>${cell(pick(bests.own), fresh(false))}${cell(pick(bests.assisted), fresh(true))}</tr>`;
+    };
+    bestsPanel.querySelector('tbody').innerHTML = EVENTS.map(([name], i) => row(name, i)).join('') + row('Decathlon total', 'total');
+  }
+  bestsPanel?.querySelector('[data-clear-bests]')?.addEventListener('click', () => {
+    if (!confirm('Clear your personal bests in this browser?')) return;
+    bests.clear();
+    store.set('decathlon-bests', JSON.stringify(bests));
+    showBests();
+  });
+  versionButtons.forEach((b) => b.addEventListener('click', () => showBests()));
+  showBests();
+
   document.addEventListener('visibilitychange', () => (document.hidden ? audio.suspend() : audio.resume()));
 
   step();
@@ -293,6 +399,9 @@ export function mountPlayer(root) {
     step(n = 1) { for (let i = 0; i < n; i += 1) step(); draw(); },
     hold(control, on) { if (on) held.add(control); else held.delete(control); },
     press(control, on) { down[control] = on; },
+    // Enhanced's fast-forward without the animation loop
+    skip() { while (skipping && waiting(game.bus.ram)) step(true); skipping = false; setHint(eventHint() || startHint()); },
+    get skipping() { return skipping; },
     play,
   };
 }
