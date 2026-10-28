@@ -44,6 +44,7 @@ const LANES = 4, LANE_LINES = 8; // each lane as deep as 8 of the picture's line
 const DIRT = [178, 96, 64], LINE = [236, 232, 220];
 const STEEL = [0.13, 0.13, 0.14]; // the standards and the javelin: black, a little lifted so their faces show
 const WALL_W = 4096, WALL_AT = 1968; // the backdrop texture: the picture's x 0 is at 1968
+const AIM_X = 85; // the camera's aim: a little ahead of the athlete (who runs at picture x 16-28, world 32-56)
 
 const VERT_TEX = `#version 300 es
 in vec3 p; in vec2 t; uniform mat4 m; out vec2 uv;
@@ -219,7 +220,7 @@ export function createView3D(canvas) {
     camera(pitch, yaw, zoom, aimZ, aspect) {
       const key = `${pitch.toFixed(3)}:${yaw.toFixed(3)}:${zoom.toFixed(1)}:${aimZ.toFixed(1)}:${aspect.toFixed(3)}`;
       if (cameras.has(key)) return cameras.get(key);
-      const target = [125, 14, aimZ];
+      const target = [AIM_X, 14, aimZ];
       const eye = [target[0] + zoom * Math.sin(yaw) * Math.cos(pitch), target[1] + zoom * Math.sin(pitch), target[2] + zoom * Math.cos(yaw) * Math.cos(pitch)];
       const lens = perspective(0.7, aspect, 5, 9000), f = lens[5];
       lens[0] *= Math.cos(pitch); lens[5] *= Math.cos(pitch);
@@ -240,8 +241,9 @@ export function createView3D(canvas) {
     // of the infield are the scoreboard's digits; field: an event without
     // lanes (the jumps and throws), held in the middle of the track, the
     // standards and the landing mat across its middle two lanes; javelin: the
-    // javelin event, whose javelin (missile 1) is drawn black
-    draw(rgba, objects, { pitch = 0.55, yaw = -0.35, zoom = 190, stretch = 1.4, depth = 3, speed = 0, trails = true, shadows = true, lane = 0, ghosts = [], race = false, hurdles = false, bars = false, scoreboard = false, field = false, javelin = false }) {
+    // javelin event, whose javelin (missile 1) is drawn black; prompt: the
+    // player's PRESS FIRE pixels [x, row], kept in the bottom strip
+    draw(rgba, objects, { pitch = 0.55, yaw = -0.35, zoom = 190, stretch = 1.4, depth = 3, speed = 0, trails = true, shadows = true, lane = 0, ghosts = [], race = false, hurdles = false, bars = false, scoreboard = false, field = false, javelin = false, prompt = null }) {
       const W = canvas.width, H = canvas.height;
       gl.viewport(0, 0, W, H);
       gl.clearColor(0, 0, 0, 1);
@@ -251,15 +253,18 @@ export function createView3D(canvas) {
       // what each sprite pixel becomes: 'box' (stands up), 'flat' (stays in the
       // ground's picture: track markers, a landing mat), 'over' (the scoreboard,
       // laid over the view), 'gone' (the game's own line under the athlete,
-      // lines 167-170, whose place the 3D shadow takes; the foot of a high
-      // jump's standard, built anew) or 'down' (a ball or missile just under
+      // lines 167-172, whose place the 3D shadow takes; the foot of a hurdle
+      // or a high jump's standard, built anew) or 'down' (a ball or missile just under
       // the feet line: the discus or javelin landed, lying on the ground)
       const role = (x, y) => {
         const ob = objects[y][x];
         if (ob < OBJECT.p0) return null;
         if (scoreboard && y >= SCOREBOARD[0] && y < SCOREBOARD[1]) return 'over';
         if (bars && ob === OBJECT.ball && y >= FEET) return 'gone';
-        if (y >= DECALS || (bars && ob === OBJECT.m0)) return 'flat';
+        // on the near track only the markers (player sprites) stay; a hurdle's
+        // foot and the line under the athlete (missiles) are built anew or shadowed
+        if (y >= DECALS) return ob <= OBJECT.p1 ? 'flat' : 'gone';
+        if (bars && ob === OBJECT.m0) return 'flat';
         if (y >= FEET) return ob <= OBJECT.p1 ? 'gone' : 'down';
         return 'box';
       };
@@ -336,6 +341,8 @@ export function createView3D(canvas) {
           hudPx[o + 3] = x >= 8 && ob !== OBJECT.background && !(black && (ob >= OBJECT.p0 || y >= LOGO_ROWS)) ? 255 : 0;
         }
       }
+      // the player's PRESS FIRE, painted into the picture over the background: shown too
+      if (prompt) for (const [x, y] of prompt) if (y >= HUD[0] && y < HUD[1]) hudPx[((y - HUD[0]) * 160 + x) * 4 + 3] = 255;
       upload(groundTex, groundPx, 160, GROUND[1] - GROUND[0], true);
       upload(trackTex, trackPx, 160, TRACK[1] - TRACK[0], true);
       upload(wallTex, wallPx, WALL_W, WALL[1] - WALL[0], true);
@@ -415,6 +422,10 @@ export function createView3D(canvas) {
       const wallH = (WALL[1] - WALL[0]) * 2.2, wz = z(GROUND[0]) - 0.5;
       const wu = (x) => (x / 2 + WALL_AT) / WALL_W;
       quad([[-far, wallH, wz, wu(-far), 0], [far, wallH, wz, wu(far), 0], [far, 0, wz, wu(far), 1], [-far, 0, wz, wu(-far), 1]]);
+      // and the sky on above them, in the colour of the picture's top line, so a far or low camera sees no edge
+      const sky = (WALL[0] * 160 + 80) * 4;
+      solid([rgba[sky], rgba[sky + 1], rgba[sky + 2]]);
+      quad([[-far, far, wz, 0, 0], [far, far, wz, 1, 0], [far, wallH - 0.01, wz, 1, 1], [-far, wallH - 0.01, wz, 0, 1]]);
 
       // everyone on the track: the running athlete (and what he meets) in his
       // lane, the athletes who have run in theirs

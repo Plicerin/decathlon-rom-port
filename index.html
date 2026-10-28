@@ -240,6 +240,8 @@
     .lp-version .opts[hidden] { display: none; }
     .lp-version label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
     .lp-version input { accent-color: var(--lp-accent); }
+    .lp-version .view3d-settings { display: contents; }
+    .lp-version .view3d-settings[hidden] { display: none; }
     .lp-version select { font: 12px ui-sans-serif, system-ui, sans-serif; padding: 3px 6px; border-radius: 6px; border: 1px solid var(--lp-line-2); background: var(--lp-panel); color: var(--lp-ink); }
     body.fs .lp-version, body.fs .lp-bests { display: none; }
     .lp-bests { width: min(760px, 100%); margin: 10px auto 0; padding: 10px 12px; border: 1px solid var(--lp-line); border-radius: 12px; background: var(--lp-panel-2); font-size: 12.5px; color: var(--lp-ink-2); display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; justify-content: space-between; }
@@ -321,13 +323,15 @@
       </select></label>
       <label><input type="checkbox" data-option="bests"> Keep personal bests</label>
       <label><input type="checkbox" data-option="stadium"> Stadium sound: starting gun and crowd</label>
-      <label><input type="checkbox" data-option="view3d"> 3D view</label>
-      <label>Camera height <input type="range" min="8" max="75" step="1" data-option="pitch" aria-label="3D camera height"></label>
-      <label>Turn <input type="range" min="-40" max="40" step="1" data-option="yaw" aria-label="3D camera turn"></label>
-      <label>Zoom <input type="range" min="120" max="700" step="10" data-option="zoom" aria-label="3D zoom"></label>
-      <label>Ground depth <input type="range" min="0.6" max="3" step="0.1" data-option="stretch" aria-label="3D ground depth"></label>
-      <label>Thickness <input type="range" min="0" max="8" step="0.5" data-option="depth" aria-label="3D thickness"></label>
-      <label><input type="checkbox" data-option="trails"> Trails</label>
+      <label><input type="checkbox" data-option="view3d"> 3D stadium view<span data-view3d-note hidden> (not available in this browser)</span></label>
+      <span class="view3d-settings" data-view3d-settings>
+        <label>Camera height <input type="range" min="15" max="50" step="1" data-option="pitch" aria-label="3D camera height"></label>
+        <label>Camera turn <input type="range" min="-30" max="10" step="1" data-option="yaw" aria-label="3D camera turn"></label>
+        <label>Camera distance <input type="range" min="170" max="360" step="10" data-option="zoom" aria-label="3D camera distance"></label>
+        <label>Track depth <input type="range" min="0.8" max="2.4" step="0.1" data-option="stretch" aria-label="3D track depth"></label>
+        <label>Figure thickness <input type="range" min="0" max="6" step="0.5" data-option="depth" aria-label="3D figure thickness"></label>
+        <label><input type="checkbox" data-option="trails"> Speed trails</label>
+      </span>
     </div>
   </div>
   <div class="lp-bests" data-bests hidden>
@@ -357,12 +361,12 @@
       <div class="lp-card">
         <h3>Picking a game</h3>
         <p>Each press of <b>Game Select</b> shows the next of 14 games: the whole decathlon for one, two, three or four athletes (the numbers 1 to 4 appear on the field), then each of the ten events on its own. <b>Game Reset</b> starts the game shown. During a decathlon it starts over from the 100 metres; during a single event it restarts that event.</p>
-        <p>The athletes take turns on the one joystick: each event is run by athlete 1, then 2, and so on. A single event is always for <b>four athletes</b>, and the game waits for each one's turn, so on your own press Game Reset to run it again.</p>
+        <p>The athletes take turns on the one joystick: each event is run by athlete 1, then 2, and so on. A single event is always for <b>four athletes</b>, and the game waits for each one's turn, so on your own press Game Reset to run it again (or play Enhanced, whose single events are for one athlete).</p>
       </div>
       <div class="lp-card">
         <h3>Original or Enhanced</h3>
         <p><b>Original</b> is the cartridge exactly as it plays, checked against the ROM frame by frame (released as <a href="https://github.com/Plicerin/decathlon-rom-port/releases/tag/original-1.0">original-1.0</a>).</p>
-        <p><b>Enhanced</b> runs the same game with quality-of-life options you can switch on and off under the screen: press the button to skip the waits after a result and between attempts (the waits' frames still run, fast, so scoring is untouched), single events for one athlete instead of four, <b>run assist</b> (hold one direction and the athlete runs at a steady 12, 16 or 20 pushes a second, for keyboards, phones and anyone who can't waggle), and <b>personal bests</b>: the game's own points for each event and your best decathlon total, kept in this browser, with run-assisted scores kept apart; and the <b>stadium</b>: a starting gun as each race opens, and a crowd that builds through the race and roars at the finish (both synthesised; the cartridge has neither). Your choices are remembered too.</p>
+        <p><b>Enhanced</b> runs the same game with quality-of-life options you can switch on and off under the screen: once a result or an attempt's wait has shown for a second, <b>PRESS FIRE</b> skips the rest of it (the wait's frames still run, fast, so scoring is untouched, and the next race still opens with its starting gun); single events for one athlete instead of four; <b>run assist</b> (hold one direction and the athlete runs at a steady 12, 16 or 20 pushes a second, for keyboards, phones and anyone who can't waggle; the hint under the screen says when it's on); <b>personal bests</b>: the game's own points for each event and your best decathlon total, kept in this browser, with run-assisted scores kept apart (a decathlon with any assisted event counts as assisted); the <b>stadium</b>: a starting gun as each race opens, a crowd that builds through the race and roars at the finish, and cheers or a groan for every jump and throw (all synthesised; the cartridge has none of it); and a <b>3D stadium view</b>: the same game, picture for picture, rebuilt as a small stadium with lanes, shadows and a camera you can move. Your choices are remembered too.</p>
       </div>
       <div class="lp-card">
         <h3>Running</h3>

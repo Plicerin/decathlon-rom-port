@@ -25,13 +25,13 @@ export const ENHANCED_OPTIONS = {
   runAssist: { label: 'Run assist', default: 0 },
   bests: { label: 'Keep personal bests', default: true },
   stadium: { label: 'Stadium sound: starting gun and crowd', default: true },
-  // the 3D view (view3d.mjs) and its settings while we tune it
+  // the 3D view (view3d.mjs) and its camera
   view3d: { label: '3D view', default: false },
   pitch: { label: 'Camera height (degrees above the track)', default: 32 },
-  yaw: { label: 'Turn (degrees)', default: -20 },
-  zoom: { label: 'Zoom (distance)', default: 190 },
-  stretch: { label: 'Ground depth', default: 1.4 },
-  depth: { label: 'Thickness (pixels)', default: 3 },
+  yaw: { label: 'Turn (degrees)', default: -13 },
+  zoom: { label: 'Zoom (distance)', default: 210 },
+  stretch: { label: 'Ground depth', default: 1.6 },
+  depth: { label: 'Thickness (pixels)', default: 1 },
   trails: { label: 'Trails', default: true },
 };
 export const isRace = (ram) => !!RACE_LENGTH[ram[EVENT]];
@@ -110,8 +110,8 @@ export class Stadium {
 // picture scrolls). A recorded athlete is drawn at the same moment of his own
 // race, ahead or behind by the difference in distance: the picture scrolls
 // about 3.9 pixels per unit (measured: a hurdle crosses 30 pixels while the
-// distance goes up 8). A new decathlon (athlete 1 starting the 100 m) clears
-// the records.
+// distance goes up 8). Athlete 1 starting a race clears the records, so a
+// restarted event or a new game never shows runs from an earlier one.
 const PX_PER_UNIT = 3.9;
 const FIGURE_ROWS = [116, 167], FIGURE_COLS = [8, 48];
 export class SideBySide {
@@ -126,7 +126,7 @@ export class SideBySide {
     this.lastDistance = distance;
     if (!racing) { this.current = null; return; }
     if (started) {
-      if (event === 0 && athlete === 0) this.runs.clear();
+      if (athlete === 0) this.runs.clear();
       this.current = { key: event * 4 + athlete, frames: [], done: false };
       this.runs.set(this.current.key, this.current.frames);
     }
@@ -178,8 +178,9 @@ export class Bests {
     this.assisted = { ...empty(), ...(saved?.assisted ?? {}) };
     this.lastWait = 0;
   }
-  // after every frame; returns what was beaten this frame (or null)
-  update(ram, assisted) {
+  // after every frame; assisted: this event was run with assist; totalAssisted:
+  // any of the athlete's events in this game was. Returns what was beaten this frame (or null)
+  update(ram, assisted, totalAssisted = assisted) {
     const scored = this.lastWait === 0xc0 && ram[WAIT] === 0xbf;
     this.lastWait = ram[WAIT];
     if (!scored) return null;
@@ -190,8 +191,9 @@ export class Bests {
     const beaten = {};
     if (points > table.events[event]) { table.events[event] = points; beaten.event = event; }
     // the last event of a decathlon: the athlete's final total
-    if (!singleEvent(ram) && event === 9 && total > table.total) { table.total = total; beaten.total = true; }
-    return Object.keys(beaten).length ? { ...beaten, assisted } : null;
+    const totals = totalAssisted ? this.assisted : this.own;
+    if (!singleEvent(ram) && event === 9 && total > totals.total) { totals.total = total; beaten.total = true; }
+    return Object.keys(beaten).length ? { ...beaten, assisted, totalAssisted } : null;
   }
   clear() { this.own = { events: Array(10).fill(0), total: 0 }; this.assisted = { events: Array(10).fill(0), total: 0 }; }
   toJSON() { return { own: this.own, assisted: this.assisted }; }

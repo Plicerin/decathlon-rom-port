@@ -18,6 +18,7 @@ import { createView3D } from './view3d.mjs';
 export const FIRST_LINE = 41;    // VBLANK goes off in frame line 41 and back on in line 231
 export const VISIBLE_LINES = 190;
 const FRAME_MS = 1000 / 60;
+const PROMPT_ROWS = CONTINUE_PIXELS.map(([x, y]) => [x, y - FIRST_LINE]); // PRESS FIRE in the picture's rows, for the 3D view
 const KEYS = {
   ArrowRight: 'right', KeyD: 'right', ArrowLeft: 'left', KeyA: 'left',
   ArrowDown: 'down', KeyS: 'down', ArrowUp: 'up', KeyW: 'up', Space: 'fire', KeyZ: 'fire',
@@ -69,6 +70,11 @@ export function mountPlayer(root) {
   // Enhanced's 3D view draws on its own canvas over this one (which keeps the keyboard focus)
   const glCanvas = root.querySelector('[data-view3d]');
   let view3d = null, view3dTried = false;
+  const view3dNote = root.querySelector('[data-view3d-note]'); // "not available in this browser"
+  // a lost WebGL context (the GPU reset, too many contexts): back to the flat
+  // picture until the browser restores it, then build the view again
+  glCanvas?.addEventListener('webglcontextlost', (event) => { event.preventDefault(); view3d = null; });
+  glCanvas?.addEventListener('webglcontextrestored', () => { view3dTried = false; });
   const sideBySide = new SideBySide(); // the 3D view's athletes who have run, in their lanes
 
   let started = false, paused = false, muted = false;
@@ -80,8 +86,15 @@ export function mountPlayer(root) {
   try { Object.assign(options, JSON.parse(store.get('decathlon-enhanced') ?? '{}')); } catch { /* defaults */ }
   const enhanced = (option) => version === 'enhanced' && options[option];
   let lastFire = false, skipping = false;
+  // frames a skippable wait has been on screen: the button skips it only after
+  // SKIP_AFTER of them, so a late press (just over the line, just after a foul)
+  // doesn't skip the very result or message it caused
+  let waitShown = 0;
+  const SKIP_AFTER = 60;
   const assist = new RunAssist();
-  let assistUsed = false; // run assist made pushes since this athlete's last score
+  let assistUsed = false; // run assist made pushes in this athlete's turn at this event
+  const assistedAthletes = new Set(); // athletes with an assisted event in this game: their totals are assisted too
+  let lastTurn = '', scoreWait = 0;
   let bests;
   try { bests = new Bests(JSON.parse(store.get('decathlon-bests') ?? 'null')); } catch { bests = new Bests(null); }
 
@@ -101,7 +114,8 @@ export function mountPlayer(root) {
     if (!ev) return '';
     const solo = enhanced('soloEvents') && singleEvent(ram);
     const who = ram[0x82 & 0x7f] && !solo ? `Player ${ram[0x83 & 0x7f] + 1}, ` : '';
-    return `${who}${ev[0]}: ${ev[1]}`;
+    const assisted = version === 'enhanced' && Number(options.runAssist) ? ` (Run assist on: hold ← or →.)` : '';
+    return `${who}${ev[0]}: ${ev[1]}${assisted}`;
   }
   function showNote() {
     if (!note) return;
@@ -133,7 +147,11 @@ export function mountPlayer(root) {
     let left = on('left'), right = on('right');
     // Enhanced run assist: one direction held makes the pushes at the chosen rate
     const rate = version === 'enhanced' ? Number(options.runAssist) || 0 : 0;
-    if (rate && left !== right) { const dir = assist.next(rate); left = dir === 'left'; right = dir === 'right'; assistUsed = true; }
+    if (rate && left !== right) {
+      const dir = assist.next(rate); left = dir === 'left'; right = dir === 'right';
+      // it counts only while an athlete is under way (not on the title or in a wait)
+      if (!waiting(game.bus.ram) && !game.bus.ram[0xc5 & 0x7f]) assistUsed = true;
+    }
     if (right && !left) swcha &= ~0x80;
     if (left && !right) swcha &= ~0x40;
     if (on('down')) swcha &= ~0x20;
@@ -152,16 +170,26 @@ export function mountPlayer(root) {
     if (loud && crowd.groan && !quiet) stadiumAudio.groan();
     // the 3D view records each athlete's race (it needs the TIA's object layer, on while the view is)
     if (enhanced('view3d') && game.bus.tia.lastObjects) sideBySide.update(game.bus.ram, game.bus.tia.lastFrame, game.bus.tia.lastObjects, NTSC_PALETTE_RGB);
+    const ram = game.bus.ram;
+    // run assist, followed whatever the options: an athlete's score (the $C0
+    // milestone) with assist marks his decathlon total as assisted; a new game clears that
+    const scored = scoreWait === 0xc0 && ram[0xf3 & 0x7f] === 0xbf;
+    scoreWait = ram[0xf3 & 0x7f];
+    if (scored && assistUsed) assistedAthletes.add(ram[0x83 & 0x7f] & 3);
+    if (ram[0xc5 & 0x7f]) assistedAthletes.clear();
     if (version === 'enhanced') {
-      afterFrame(game.bus.ram, options);
+      afterFrame(ram, options);
       if (options.bests) {
-        const beaten = bests.update(game.bus.ram, assistUsed);
-        if (bests.lastWait === 0xbf) assistUsed = false; // scored: the next athlete or event starts clean
+        const beaten = bests.update(ram, assistUsed, assistedAthletes.has(ram[0x83 & 0x7f] & 3));
         if (beaten) { store.set('decathlon-bests', JSON.stringify(bests)); showBests(beaten); }
       }
     }
-    // Enhanced: a press of the button during a wait fast-forwards it
-    if (!quiet && fire && !lastFire && enhanced('skipWaits') && longWait(game.bus.ram)) skipping = true;
+    // each athlete's turn at an event (and the title) starts with assist unused
+    const turn = `${ram[0x80 & 0x7f]}:${ram[0x83 & 0x7f]}:${ram[0xc5 & 0x7f] ? 'title' : ''}`;
+    if (turn !== lastTurn) { lastTurn = turn; assistUsed = false; }
+    // Enhanced: a fresh press of the button, once a wait has shown for a second, fast-forwards it
+    waitShown = longWait(ram) ? waitShown + 1 : 0;
+    if (!quiet && fire && !lastFire && enhanced('skipWaits') && waitShown >= SKIP_AFTER) skipping = true;
     if (!quiet) lastFire = fire;
     tapped.clear();
     // the frame's sound register writes ($15-$1A) with their cycles, and the frame's length
@@ -193,8 +221,9 @@ export function mountPlayer(root) {
         data[o] = rgb >> 16; data[o + 1] = (rgb >> 8) & 0xff; data[o + 2] = rgb & 0xff; data[o + 3] = 255;
       }
     }
-    // Enhanced: during a skippable wait, PRESS TO CONTINUE in the game's text row
-    if (enhanced('skipWaits') && !skipping && longWait(game.bus.ram)) {
+    // Enhanced: once a wait can be skipped, PRESS FIRE in the game's text row
+    const prompt = enhanced('skipWaits') && !skipping && waitShown >= SKIP_AFTER;
+    if (prompt) {
       const rgb = NTSC_PALETTE_RGB[(MESSAGE_INK >> 1) & 0x7f];
       for (const [x, y] of CONTINUE_PIXELS) {
         const o = ((y - FIRST_LINE) * 160 + x) * 4;
@@ -205,7 +234,11 @@ export function mountPlayer(root) {
     const tia = game.bus.tia;
     const want3d = enhanced('view3d') && glCanvas;
     tia.recordObjects = !!want3d;
-    if (want3d && !view3dTried) { view3dTried = true; try { view3d = createView3D(glCanvas); } catch (error) { console.warn('3D view unavailable:', error); } }
+    if (want3d && !view3dTried) {
+      view3dTried = true;
+      try { view3d = createView3D(glCanvas); } catch (error) { console.warn('3D view unavailable:', error); }
+      if (view3dNote) view3dNote.hidden = !!view3d;
+    }
     const show3d = !!(want3d && view3d && tia.lastObjects);
     if (glCanvas) glCanvas.hidden = !show3d;
     canvas.style.opacity = show3d ? '0' : '';
@@ -226,6 +259,8 @@ export function mountPlayer(root) {
         bars: [3, 7].includes(game.bus.ram[0x80 & 0x7f]), // the high jump, the pole vault
         // a result (the countdown above $0F) or the title ($C5) shows the scoreboard
         scoreboard: longWait(game.bus.ram) || game.bus.ram[0xc5 & 0x7f] !== 0,
+        // the PRESS FIRE pixels (painted into the picture above), kept in the view's bottom strip
+        prompt: prompt ? PROMPT_ROWS : null,
       });
       return;
     }
@@ -248,11 +283,13 @@ export function mountPlayer(root) {
     if (!paused && !document.hidden) {
       acc += dt;
       while (acc >= FRAME_MS) { step(); acc -= FRAME_MS; }
-      // Enhanced skip: run the wait's frames, as fast as about 10 ms a display frame allows
+      // Enhanced skip: run the wait's frames, up to about 30 ms of them a display
+      // frame, to the end of the result or attempt wait; the next race's opening
+      // second ($0F down, with its starting gun) then plays as usual
       if (skipping) {
-        const until = performance.now() + 10;
-        while (waiting(game.bus.ram) && performance.now() < until) step(true);
-        if (!waiting(game.bus.ram)) { skipping = false; setHint(eventHint() || startHint()); }
+        const until = performance.now() + 30;
+        while (longWait(game.bus.ram) && performance.now() < until) step(true);
+        if (!longWait(game.bus.ram)) { skipping = false; setHint(eventHint() || startHint()); }
       }
     }
     draw();
@@ -401,6 +438,7 @@ export function mountPlayer(root) {
     const key = box.dataset.option;
     const isCheck = box.type === 'checkbox';
     if (isCheck) box.checked = !!options[key]; else box.value = String(options[key]);
+    if (box.type === 'range') options[key] = Number(box.value); // a value saved from wider limits, brought within them
     // sliders follow while they move
     if (box.type === 'range') box.addEventListener('input', () => { options[key] = Number(box.value); store.set('decathlon-enhanced', JSON.stringify(options)); });
     box.addEventListener('change', () => {
@@ -408,9 +446,14 @@ export function mountPlayer(root) {
       if (key === 'bests') showBests();
       store.set('decathlon-enhanced', JSON.stringify(options));
       if (key === 'skipWaits' && !box.checked) skipping = false;
+      if (key === 'view3d') showView3dSettings();
       refocus();
     });
   });
+  // the camera settings only while the 3D view is on
+  const view3dSettings = root.querySelector('[data-view3d-settings]');
+  const showView3dSettings = () => { if (view3dSettings) view3dSettings.hidden = !options.view3d; };
+  showView3dSettings();
   showVersion();
 
   // the personal bests panel: points per event and the decathlon total, yours and with run assist
@@ -420,17 +463,19 @@ export function mountPlayer(root) {
     bestsPanel.hidden = !(version === 'enhanced' && options.bests);
     const cell = (n, isNew) => `<td${isNew ? ' class="new"' : ''}>${n ? n.toLocaleString('en-US') : '–'}</td>`;
     const row = (name, i) => {
-      const fresh = (assisted) => beaten && beaten.assisted === assisted && (i === 'total' ? beaten.total : beaten.event === i);
+      const fresh = (assisted) => beaten && (i === 'total' ? beaten.total && beaten.totalAssisted === assisted : beaten.assisted === assisted && beaten.event === i);
       const pick = (t) => (i === 'total' ? t.total : t.events[i]);
       return `<tr><th>${name}</th>${cell(pick(bests.own), fresh(false))}${cell(pick(bests.assisted), fresh(true))}</tr>`;
     };
     bestsPanel.querySelector('tbody').innerHTML = EVENTS.map(([name], i) => row(name, i)).join('') + row('Decathlon total', 'total');
   }
   bestsPanel?.querySelector('[data-clear-bests]')?.addEventListener('click', () => {
-    if (!confirm('Clear your personal bests in this browser?')) return;
-    bests.clear();
-    store.set('decathlon-bests', JSON.stringify(bests));
-    showBests();
+    if (confirm('Clear your personal bests in this browser?')) {
+      bests.clear();
+      store.set('decathlon-bests', JSON.stringify(bests));
+      showBests();
+    }
+    refocus(); // so the next Space is the button in the game, not this one again
   });
   versionButtons.forEach((b) => b.addEventListener('click', () => showBests()));
   showBests();
@@ -450,7 +495,7 @@ export function mountPlayer(root) {
     hold(control, on) { if (on) held.add(control); else held.delete(control); },
     press(control, on) { down[control] = on; },
     // Enhanced's fast-forward without the animation loop
-    skip() { while (skipping && waiting(game.bus.ram)) step(true); skipping = false; setHint(eventHint() || startHint()); },
+    skip() { while (skipping && longWait(game.bus.ram)) step(true); skipping = false; setHint(eventHint() || startHint()); },
     get skipping() { return skipping; },
     // the 3D view's state, for checks
     get view3d() { return { tried: view3dTried, ready: !!view3d, shown: glCanvas ? !glCanvas.hidden : false }; },
