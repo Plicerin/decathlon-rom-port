@@ -44,6 +44,7 @@ const LANES = 4, LANE_LINES = 8; // each lane as deep as 8 of the picture's line
 const DIRT = [178, 96, 64], LINE = [236, 232, 220];
 const STEEL = [0.13, 0.13, 0.14]; // the standards and the javelin: black, a little lifted so their faces show
 const WALL_W = 4096, WALL_AT = 1968; // the backdrop texture: the picture's x 0 is at 1968
+const MAT_H = 2.5, MAT_TOP = [236, 238, 240], MAT_SIDE = [196, 200, 206], MAT_END = [170, 175, 182]; // the high jump's landing mat
 const AIM_X = 85; // the camera's aim: a little ahead of the athlete (who runs at picture x 16-28, world 32-56)
 
 const VERT_TEX = `#version 300 es
@@ -167,7 +168,7 @@ export function createView3D(canvas) {
     return t;
   };
   const groundTex = makeTexture(true), trackTex = makeTexture(true), wallTex = makeTexture(true);
-  const hudTex = makeTexture(false), solidTex = makeTexture(false), scoreTex = makeTexture(false), decalTex = makeTexture(false), matTex = makeTexture(false); // solidTex: one colour, for the grass and the lane lines
+  const hudTex = makeTexture(false), solidTex = makeTexture(false), scoreTex = makeTexture(false), decalTex = makeTexture(false); // solidTex: one colour, for the grass and the lane lines
 
   // the boxes: shared geometry, per-instance pixel and colour
   const boxVao = gl.createVertexArray();
@@ -206,7 +207,6 @@ export function createView3D(canvas) {
   const hudPx = new Uint8Array(160 * (HUD[1] - HUD[0]) * 4);
   const scorePx = new Uint8Array(160 * (SCOREBOARD[1] - SCOREBOARD[0]) * 4);
   const decalPx = new Uint8Array(160 * (TRACK[1] - DECALS) * 4);
-  const matPx = new Uint8Array(160 * (FEET + 1 - TRACK[0]) * 4);
   const cameras = new Map();
   let aimX = AIM_X; // the camera's aim along the track (world x), eased in the high jump and the pole vault
   const upload = (texture, px, width, lines, mip) => {
@@ -386,7 +386,9 @@ export function createView3D(canvas) {
         return rows;
       };
       const decalRows = lift(decalPx, decalTex, [DECALS, TRACK[1]], marker);
-      const matRows = lift(matPx, matTex, [TRACK[0], FEET + 1], mat);
+      // the landing mat's ends (picture x), from the game's mat
+      let mat0 = 160, mat1 = -1;
+      if (bars) for (let y = TRACK[0]; y <= FEET; y += 1) for (let x = 8; x < 160; x += 1) if (mat(x, y)) { mat0 = Math.min(mat0, x); mat1 = Math.max(mat1, x); }
 
       // the world: x = picture x * 2; y up; z toward the camera, 0 at the feet line
       const z = (row) => (row - FEET) * stretch;
@@ -397,12 +399,14 @@ export function createView3D(canvas) {
       // the high jump and the pole vault: the athlete runs across the picture to
       // the bar, at its right, out of the usual view. The camera follows, aimed
       // 40% of the way from the athlete to the far end of the bar (at first the
-      // pole he carries), eased, so the bar is seen coming and the jump is in the middle
+      // pole he carries), but never so far ahead that he leaves the view's left
+      // (60 world units from the aim, as in the other events), eased, so the bar
+      // is seen coming and the jump is in the middle
       if (bars) {
         let a = 160, s = -1;
         for (let i = 0; i < boxes.length; i += 5) a = Math.min(a, boxes[i]);
         for (let i = 0; i < scenery.length; i += 5) s = Math.max(s, scenery[i]);
-        const aimTo = boxes.length && s >= 0 ? Math.max(AIM_X, 2 * (a + 0.4 * (s - a))) : aimX; // world x = picture x * 2
+        const aimTo = boxes.length && s >= 0 ? Math.max(AIM_X, Math.min(2 * (a + 0.4 * (s - a)), 2 * a + 60)) : aimX; // world x = picture x * 2
         aimX += (aimTo - aimX) * 0.08;
       } else aimX = AIM_X;
       const m = this.camera(pitch, yaw, zoom, at - 6, W / H, Math.round(aimX * 2) / 2);
@@ -441,8 +445,18 @@ export function createView3D(canvas) {
       };
       // the markers (the 100 m signs), as deep as they are tall, inside a lane
       if (decalRows) paint(decalTex, decalRows, TRACK[1] - DECALS, Math.min(0.42 * laneW, decalRows[1] - decalRows[0]));
-      // the landing mat, across the two lanes of the standard
-      if (matRows) paint(matTex, matRows, FEET + 1 - TRACK[0], (field ? 0.95 : 0.42) * laneW);
+      // the landing mat, across the two lanes of the standard: a white slab, a
+      // little thick, its sides a shade darker so its edges show
+      if (mat1 >= 0) {
+        const x0 = mat0 * 2, x1 = (mat1 + 1) * 2, half = (field ? 0.95 : 0.42) * laneW, z0 = at - half, z1 = at + half, h = MAT_H;
+        solid(MAT_TOP);
+        quad([[x0, h, z0, 0, 0], [x1, h, z0, 1, 0], [x1, h, z1, 1, 1], [x0, h, z1, 0, 1]]);
+        solid(MAT_SIDE);
+        quad([[x0, 0, z1, 0, 0], [x1, 0, z1, 1, 0], [x1, h, z1, 1, 1], [x0, h, z1, 0, 1]]);
+        quad([[x0, 0, z0, 0, 0], [x1, 0, z0, 1, 0], [x1, h, z0, 1, 1], [x0, h, z0, 0, 1]]);
+        solid(MAT_END);
+        for (const x of [x0, x1]) quad([[x, 0, z0, 0, 0], [x, 0, z1, 1, 0], [x, h, z1, 1, 1], [x, h, z0, 0, 1]]);
+      }
       // the backdrop: the sky and stands standing at the far side, a little over twice as tall as their lines
       gl.bindTexture(gl.TEXTURE_2D, wallTex);
       const wallH = (WALL[1] - WALL[0]) * 2.2, wz = z(GROUND[0]) - 0.5;

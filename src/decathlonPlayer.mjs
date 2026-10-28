@@ -13,7 +13,7 @@ import { createTiaAudio } from './tiaAudio.mjs?v=a91972a4';
 import { readGamepad, gamepadEdges } from './gamepad.mjs?v=c79c8e58';
 import { ENHANCED_OPTIONS, waiting, longWait, singleEvent, afterFrame, CONTINUE_PIXELS, MESSAGE_INK, RunAssist, Bests, cleanInitials, Stadium, SPEED, SideBySide, isRace } from './enhanced.mjs?v=b908fa2d';
 import { createStadiumAudio } from './stadiumAudio.mjs?v=f0f4bfa9';
-import { createView3D } from './view3d.mjs?v=a8e5f80a';
+import { createView3D } from './view3d.mjs?v=d084ecbd';
 
 export const FIRST_LINE = 41;    // VBLANK goes off in frame line 41 and back on in line 231
 export const VISIBLE_LINES = 190;
