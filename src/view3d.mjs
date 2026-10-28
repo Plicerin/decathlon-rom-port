@@ -130,6 +130,19 @@ function period(row) {
   return 0;
 }
 
+// Feet: the figures stop a line above the ground (the game's lowest lines
+// there are its own line under the athlete, left out), so a leg standing on
+// that line ends in a stub. Each one gets a foot: a pixel in front of it
+// (the athletes face right), in the leg's colour. pixels: [x, row, r, g, b, ...]
+function addFeet(pixels) {
+  const ground = new Map();
+  for (let i = 0; i < pixels.length; i += 5) if (pixels[i + 1] === FEET - 1) ground.set(pixels[i], i);
+  for (const [x, i] of ground) {
+    if (ground.has(x + 1)) continue; // the front of a leg two pixels wide
+    pixels.push(x + 1, FEET - 1, pixels[i + 2], pixels[i + 3], pixels[i + 4]);
+  }
+}
+
 export function createView3D(canvas) {
   const gl = canvas.getContext('webgl2', { antialias: true, alpha: false, stencil: true });
   if (!gl) return null;
@@ -429,6 +442,8 @@ export function createView3D(canvas) {
 
       // everyone on the track: the running athlete (and what he meets) in his
       // lane, the athletes who have run in theirs
+      addFeet(boxes);
+      for (const r of ghosts) addFeet(r.pixels);
       const runners = [{ place: [0, at], pixels: boxes }];
       if (hurdles) {
         // each hurdle (the game's post: ball and missile pixels) as uprights at the
