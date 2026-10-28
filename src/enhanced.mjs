@@ -23,7 +23,7 @@ export const ENHANCED_OPTIONS = {
   // pushes a second while a direction is held (0: off). The game's speed comes
   // in steps: 12 a second runs the 100 m in about 11.3 s, 16 in 10.2, 20 in 10.1
   runAssist: { label: 'Run assist', default: 0 },
-  bests: { label: 'Keep personal bests', default: true },
+  bests: { label: 'Keep best scores', default: true },
   stadium: { label: 'Stadium sound: starting gun and crowd', default: true },
   // the 3D view (view3d.mjs) and its camera
   view3d: { label: '3D view', default: false },
@@ -168,14 +168,21 @@ export class SideBySide {
 
 // Personal bests: the game's own points for each event (they rise with every
 // better time, distance or height) and the best decathlon total, kept in this
-// browser; runs with run assist are kept apart. Points are read on the frame
+// browser, each with the initials of the athlete who set it; runs with run
+// assist are kept apart. Points are read on the frame
 // the countdown passes $C0: the milestone where the game adds the event's
 // points to the athlete's total, once per athlete per event (between-attempt
 // waits start below it).
 const bcd = (hi, lo) => [hi >> 4, hi & 15, lo >> 4, lo & 15].reduce((n, d) => n * 10 + d, 0);
-// a saved table, whatever is in storage: whole points or 0
+// a saved table, whatever is in storage: whole points or 0, initials of up to three letters or ''
 const points = (n) => (Number.isInteger(n) && n > 0 && n < 100000 ? n : 0);
-const table = (t) => ({ events: Array.from({ length: 10 }, (_, i) => points(t?.events?.[i])), total: points(t?.total) });
+export const cleanInitials = (s) => (typeof s === 'string' ? s.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3) : '');
+const table = (t) => ({
+  events: Array.from({ length: 10 }, (_, i) => points(t?.events?.[i])),
+  names: Array.from({ length: 10 }, (_, i) => cleanInitials(t?.names?.[i])),
+  total: points(t?.total),
+  totalName: cleanInitials(t?.totalName),
+});
 export class Bests {
   constructor(saved) {
     this.load(saved);
@@ -186,13 +193,14 @@ export class Bests {
   merge(saved) {
     for (const key of ['own', 'assisted']) {
       const theirs = table(saved?.[key]), mine = this[key];
-      mine.events = mine.events.map((n, i) => Math.max(n, theirs.events[i]));
-      mine.total = Math.max(mine.total, theirs.total);
+      theirs.events.forEach((n, i) => { if (n > mine.events[i]) { mine.events[i] = n; mine.names[i] = theirs.names[i]; } });
+      if (theirs.total > mine.total) { mine.total = theirs.total; mine.totalName = theirs.totalName; }
     }
   }
   // after every frame; assisted: this event was run with assist; totalAssisted:
-  // any of the athlete's events in this game was. Returns what was beaten this frame (or null)
-  update(ram, assisted, totalAssisted = assisted) {
+  // any of the athlete's events in this game was; names: the athletes' initials.
+  // Returns what was beaten this frame (or null)
+  update(ram, assisted, totalAssisted = assisted, names = []) {
     const scored = this.lastWait === 0xc0 && ram[WAIT] === 0xbf;
     this.lastWait = ram[WAIT];
     if (!scored) return null;
@@ -201,10 +209,11 @@ export class Bests {
     const total = bcd(ram[TOTALS + 2 * athlete], ram[TOTALS + 2 * athlete + 1]);
     const table = assisted ? this.assisted : this.own;
     const beaten = {};
-    if (points > table.events[event]) { table.events[event] = points; beaten.event = event; }
+    const name = cleanInitials(names[athlete]);
+    if (points > table.events[event]) { table.events[event] = points; table.names[event] = name; beaten.event = event; }
     // the last event of a decathlon: the athlete's final total
     const totals = totalAssisted ? this.assisted : this.own;
-    if (!singleEvent(ram) && event === 9 && total > totals.total) { totals.total = total; beaten.total = true; }
+    if (!singleEvent(ram) && event === 9 && total > totals.total) { totals.total = total; totals.totalName = name; beaten.total = true; }
     return Object.keys(beaten).length ? { ...beaten, assisted, totalAssisted } : null;
   }
   clear() { this.load(null); }

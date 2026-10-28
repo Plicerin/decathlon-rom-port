@@ -11,7 +11,7 @@ import { DecathlonMachine } from './decathlonMachine.mjs';
 import { NTSC_PALETTE_RGB } from './palette.mjs';
 import { createTiaAudio } from './tiaAudio.mjs';
 import { readGamepad, gamepadEdges } from './gamepad.mjs';
-import { ENHANCED_OPTIONS, waiting, longWait, singleEvent, afterFrame, CONTINUE_PIXELS, MESSAGE_INK, RunAssist, Bests, Stadium, SPEED, SideBySide, isRace } from './enhanced.mjs';
+import { ENHANCED_OPTIONS, waiting, longWait, singleEvent, afterFrame, CONTINUE_PIXELS, MESSAGE_INK, RunAssist, Bests, cleanInitials, Stadium, SPEED, SideBySide, isRace } from './enhanced.mjs';
 import { createStadiumAudio } from './stadiumAudio.mjs';
 import { createView3D } from './view3d.mjs';
 
@@ -102,6 +102,11 @@ export function mountPlayer(root) {
   let assistUsed = false; // run assist made pushes in this athlete's turn at this event
   const assistedAthletes = new Set(); // athletes with an assisted event in this game: their totals are assisted too
   let lastTurn = '', scoreWait = 0;
+  // Enhanced best scores: each athlete's initials, asked for as a game starts
+  // (the game waits meanwhile) and remembered for the next one
+  let initials = ['', '', '', ''];
+  try { const saved = JSON.parse(store.get('decathlon-initials') ?? '[]'); initials = initials.map((_, i) => cleanInitials(saved?.[i])); } catch { /* none yet */ }
+  let asking = false, wasTitle = true;
   let bests;
   const savedBests = () => { try { return JSON.parse(store.get('decathlon-bests') ?? 'null'); } catch { return null; } };
   bests = new Bests(savedBests());
@@ -143,7 +148,7 @@ export function mountPlayer(root) {
   }
   addEventListener('scroll', placeNote, { passive: true });
   addEventListener('resize', placeNote);
-  const silence = () => { audio.setSilent(muted || paused || !started); stadiumAudio.setSilent(muted || paused || !started); };
+  const silence = () => { const off = muted || paused || asking || !started; audio.setSilent(off); stadiumAudio.setSilent(off); };
 
   // one frame; quiet: a fast-forwarded frame (neutral controls, its sound
   // writes collected into audioCarry instead of played)
@@ -190,10 +195,14 @@ export function mountPlayer(root) {
     if (version === 'enhanced') {
       afterFrame(ram, options);
       if (options.bests) {
-        const beaten = bests.update(ram, assistUsed, assistedAthletes.has(ram[0x83 & 0x7f] & 3));
+        const beaten = bests.update(ram, assistUsed, assistedAthletes.has(ram[0x83 & 0x7f] & 3), initials);
         if (beaten) { saveBests(); showBests(beaten); }
       }
     }
+    // a game starting (Game Reset from the title): the athletes' initials first
+    const title = !!ram[0xc5 & 0x7f];
+    if (wasTitle && !title && enhanced('bests')) askInitials(singleEvent(ram) ? (options.soloEvents ? 1 : 4) : (ram[0x82 & 0x7f] & 3) + 1);
+    wasTitle = title;
     // each athlete's turn at an event (and the title) starts with assist unused
     const turn = `${ram[0x80 & 0x7f]}:${ram[0x83 & 0x7f]}:${ram[0xc5 & 0x7f] ? 'title' : ''}`;
     if (turn !== lastTurn) { lastTurn = turn; assistUsed = false; }
@@ -294,9 +303,10 @@ export function mountPlayer(root) {
     if (padWake && !pad?.start && !pad?.back) padWake = false;
     // the hint names the pad's buttons or the keys, so it changes even while paused
     if (!!pad !== padShown) { padShown = !!pad; showNote(); if (started) setHint(eventHint() || startHint()); }
-    if (!paused && !document.hidden) {
+    if (asking && edges.start) endInitials(); // the pad's Start takes the initials as they are
+    if (!paused && !asking && !document.hidden) {
       acc += dt;
-      while (acc >= FRAME_MS) { step(); acc -= FRAME_MS; }
+      while (acc >= FRAME_MS && !asking) { step(); acc -= FRAME_MS; }
       // Enhanced skip: run the wait's frames, up to about 30 ms of them a display
       // frame, to the end of the result or attempt wait; the next race's opening
       // second ($0F down, with its starting gun) then plays as usual
@@ -443,7 +453,7 @@ export function mountPlayer(root) {
   versionButtons.forEach((b) => b.addEventListener('click', () => {
     version = b.dataset.version;
     store.set('decathlon-version', version);
-    if (version !== 'enhanced') skipping = false;
+    if (version !== 'enhanced') { skipping = false; endInitials(); }
     showVersion();
     if (started) setHint(eventHint() || startHint());
     refocus();
@@ -459,7 +469,7 @@ export function mountPlayer(root) {
     if (box.type === 'range') box.addEventListener('input', () => { options[key] = Number(box.value); store.set('decathlon-enhanced', JSON.stringify(options)); });
     box.addEventListener('change', () => {
       options[key] = isCheck ? box.checked : Number(box.value);
-      if (key === 'bests') showBests();
+      if (key === 'bests') { showBests(); if (!box.checked) endInitials(); }
       store.set('decathlon-enhanced', JSON.stringify(options));
       if (key === 'skipWaits' && !box.checked) skipping = false;
       if (key === 'view3d') showView3dSettings();
@@ -472,22 +482,64 @@ export function mountPlayer(root) {
   showView3dSettings();
   showVersion();
 
-  // the personal bests panel: points per event and the decathlon total, yours and with run assist
+  const initialsForm = root.querySelector('[data-initials]');
+  const initialsFields = root.querySelector('[data-initials-fields]');
+  function askInitials(count) {
+    if (!initialsForm) return;
+    initialsFields.replaceChildren(...Array.from({ length: count }, (_, i) => {
+      const label = document.createElement('label');
+      label.append(count > 1 ? `Athlete ${i + 1}` : 'Athlete');
+      const input = document.createElement('input');
+      // no maxLength: a paste such as "a.b.c" is cleaned to three letters, not cut to "a.b" first
+      Object.assign(input, { value: initials[i], autocomplete: 'off', spellcheck: false });
+      input.setAttribute('autocapitalize', 'characters');
+      input.setAttribute('aria-label', `Athlete ${i + 1}'s initials`);
+      input.addEventListener('input', () => { const v = cleanInitials(input.value); if (input.value !== v) input.value = v; });
+      label.append(input);
+      return label;
+    }));
+    asking = true;
+    initialsForm.hidden = false;
+    silence();
+    const first = initialsFields.querySelector('input');
+    first.focus({ preventScroll: true });
+    first.select();
+  }
+  function endInitials() {
+    if (!asking) return;
+    initialsFields.querySelectorAll('input').forEach((input, i) => { initials[i] = cleanInitials(input.value); });
+    store.set('decathlon-initials', JSON.stringify(initials));
+    asking = false;
+    initialsForm.hidden = true;
+    acc = 0;
+    silence();
+    refocus();
+  }
+  initialsForm?.addEventListener('submit', (event) => { event.preventDefault(); endInitials(); });
+  // a held Enter (the Game Reset that started the game) repeating doesn't also answer
+  initialsForm?.addEventListener('keydown', (event) => { if (event.key === 'Enter' && event.repeat) event.preventDefault(); });
+
+  // the best scores panel: points per event and the decathlon total, with the
+  // initials of who set them, without and with run assist
   const bestsPanel = root.querySelector('[data-bests]');
   function showBests(beaten = null) {
     if (!bestsPanel) return;
     bestsPanel.hidden = !(version === 'enhanced' && options.bests);
-    const cell = (tag, text, isNew = false) => {
+    const cell = (tag, text, isNew = false, who = null) => {
       const c = document.createElement(tag);
       c.textContent = text;
       if (isNew) c.className = 'new';
+      if (who !== null) { const w = document.createElement('span'); w.className = 'who'; w.textContent = who; c.append(w); }
       return c;
     };
     const row = (name, i) => {
       const fresh = (assisted) => beaten && (i === 'total' ? beaten.total && beaten.totalAssisted === assisted : beaten.assisted === assisted && beaten.event === i);
-      const pick = (t) => { const n = i === 'total' ? t.total : t.events[i]; return n ? n.toLocaleString('en-US') : '–'; };
+      const score = (t, assisted) => {
+        const n = i === 'total' ? t.total : t.events[i];
+        return cell('td', n ? n.toLocaleString('en-US') : '–', fresh(assisted), n ? (i === 'total' ? t.totalName : t.names[i]) : '');
+      };
       const tr = document.createElement('tr');
-      tr.append(cell('th', name), cell('td', pick(bests.own), fresh(false)), cell('td', pick(bests.assisted), fresh(true)));
+      tr.append(cell('th', name), score(bests.own, false), score(bests.assisted, true));
       return tr;
     };
     bestsPanel.querySelector('tbody').replaceChildren(...EVENTS.map(([name], i) => row(name, i)), row('Decathlon total', 'total'));
@@ -499,7 +551,7 @@ export function mountPlayer(root) {
     showBests();
   });
   bestsPanel?.querySelector('[data-clear-bests]')?.addEventListener('click', () => {
-    if (confirm('Clear your personal bests in this browser?')) {
+    if (confirm('Clear the best scores in this browser?')) {
       bests.clear();
       store.set('decathlon-bests', JSON.stringify(bests));
       showBests();
@@ -531,6 +583,7 @@ export function mountPlayer(root) {
     // Enhanced's fast-forward without the animation loop
     skip() { while (skipping && longWait(game.bus.ram)) step(true); skipping = false; setHint(eventHint() || startHint()); },
     get skipping() { return skipping; },
+    get asking() { return asking; },
     // the 3D view's state, for checks
     get view3d() { return { tried: view3dTried, ready: !!view3d, shown: glCanvas ? !glCanvas.hidden : false }; },
     play,

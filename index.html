@@ -145,6 +145,20 @@
     .tv canvas:focus-visible { box-shadow: 0 0 0 2px var(--lp-accent); }
     .tv-note { position: absolute; z-index: 2; left: 50%; top: 10px; transform: translateX(-50%); padding: 5px 12px; border-radius: 8px; border: 1px solid var(--lp-line-2); background: rgba(8, 10, 26, 0.88); color: var(--lp-ink); font: 11px ui-monospace, "Cascadia Mono", monospace; letter-spacing: 1px; pointer-events: none; white-space: nowrap; }
     .tv-note[hidden] { display: none; }
+    /* Enhanced: the athletes' initials for the best scores, asked as a game starts */
+    .initials { position: absolute; inset: 0; z-index: 3; display: grid; place-content: center; justify-items: center; gap: 12px; padding: 10px; border-radius: 6px; background: rgba(8, 10, 26, 0.86); color: var(--lp-ink); font: 11px ui-monospace, "Cascadia Mono", monospace; letter-spacing: 1px; text-transform: uppercase; text-align: center; }
+    .initials[hidden] { display: none; }
+    .initials p { margin: 0; }
+    .initials-fields { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; }
+    .initials label { display: grid; justify-items: center; gap: 5px; font-size: 10px; color: var(--lp-ink-3); }
+    .initials input { width: 3.4em; padding: 6px 4px; border: 1px solid var(--lp-line-2); border-radius: 8px; background: var(--lp-panel); color: var(--lp-ink); font: 700 22px ui-monospace, "Cascadia Mono", monospace; letter-spacing: 3px; text-align: center; text-transform: uppercase; }
+    .initials input:focus { outline: 2px solid var(--lp-accent); outline-offset: 1px; }
+    .initials .lp-btn { font-size: 13px; padding: 8px 20px 9px; }
+    @media (max-width: 560px) {
+      .initials, .initials-fields { gap: 8px; }
+      .initials input { font-size: 16px; padding: 5px 3px; }
+      .initials .lp-btn { font-size: 12px; padding: 6px 16px 7px; }
+    }
     .poster { position: absolute; inset: 0; display: grid; place-items: center; }
     .poster[hidden] { display: none; }
     .poster img { position: absolute; inset: 0; height: 100%; border-radius: 6px; }
@@ -252,6 +266,8 @@
     .lp-bests thead th { color: var(--lp-ink-3); font-weight: 600; border-top: 0; }
     .lp-bests th:first-child { text-align: left; font-weight: 500; color: var(--lp-ink); }
     .lp-bests td.new { color: var(--lp-robot); font-weight: 700; }
+    .lp-bests td .who { display: inline-block; width: 3ch; margin-left: 7px; text-align: left; color: var(--lp-ink-3); font: 600 11px ui-monospace, "Cascadia Mono", monospace; letter-spacing: 0.5px; }
+    .lp-bests td.new .who { color: inherit; }
     .lp-bests button { font: 11px ui-monospace, "Cascadia Mono", monospace; padding: 5px 11px; border-radius: 8px; border: 1px solid var(--lp-line); background: var(--lp-panel); color: var(--lp-ink-2); cursor: pointer; }
     ol.lp-steps { margin: 0 0 0 20px; font-size: 13.5px; line-height: 1.6; }
     ol.lp-steps li { margin: 3px 0; }
@@ -281,6 +297,11 @@
         <img src="img/start.png" alt="The title screen: an athlete carrying the torch along the blue track below the stands, and DECATHLON, Copyright 1983." width="640" height="380">
         <button class="lp-btn primary" type="button" data-play>Power on</button>
       </div>
+      <form class="initials" data-initials hidden>
+        <p>Initials for the best scores</p>
+        <div class="initials-fields" data-initials-fields></div>
+        <button class="lp-btn primary" type="submit">Start</button>
+      </form>
     </div>
     <div id="status-line" data-hint aria-live="polite">Press Power on, then Game Select to pick a game</div>
     <div class="deck" aria-label="Console">
@@ -322,7 +343,7 @@
         <option value="16">fast: 16 a second</option>
         <option value="20">fastest: 20 a second</option>
       </select></label>
-      <label><input type="checkbox" data-option="bests"> Keep personal bests</label>
+      <label><input type="checkbox" data-option="bests"> Keep best scores</label>
       <label><input type="checkbox" data-option="stadium"> Stadium sound: starting gun and crowd</label>
       <label><input type="checkbox" data-option="view3d"> 3D stadium view<span data-view3d-note hidden> (not available in this browser)</span></label>
       <span class="view3d-settings" data-view3d-settings>
@@ -337,7 +358,7 @@
   </div>
   <div class="lp-bests" data-bests hidden>
     <table>
-      <thead><tr><th>Personal bests (points)</th><th>Yours</th><th>With run assist</th></tr></thead>
+      <thead><tr><th>Best scores (points)</th><th>Without assist</th><th>With run assist</th></tr></thead>
       <tbody></tbody>
     </table>
     <button type="button" data-clear-bests>Clear</button>
@@ -367,7 +388,7 @@
       <div class="lp-card">
         <h3>Original or Enhanced</h3>
         <p><b>Original</b> is the cartridge exactly as it plays, checked against the ROM frame by frame (released as <a href="https://github.com/Plicerin/decathlon-rom-port/releases/tag/original-1.0">original-1.0</a>).</p>
-        <p><b>Enhanced</b> runs the same game with quality-of-life options you can switch on and off under the screen: once a result or an attempt's wait has shown for a second, <b>PRESS FIRE</b> skips the rest of it (the wait's frames still run, fast, so scoring is untouched, and the next race still opens with its starting gun); single events for one athlete instead of four; <b>run assist</b> (hold one direction and the athlete runs at a steady 12, 16 or 20 pushes a second, for keyboards, phones and anyone who can't waggle; the hint under the screen says when it's on); <b>personal bests</b>: the game's own points for each event and your best decathlon total, kept in this browser, with run-assisted scores kept apart (a decathlon with any assisted event counts as assisted); the <b>stadium</b>: a starting gun as each race opens, a crowd that builds through the race and roars at the finish, and cheers or a groan for every jump and throw (all synthesised; the cartridge has none of it); and a <b>3D stadium view</b>: the same game, picture for picture, rebuilt as a small stadium with lanes, shadows and a camera you can move. Your choices are remembered too.</p>
+        <p><b>Enhanced</b> runs the same game with quality-of-life options you can switch on and off under the screen: once a result or an attempt's wait has shown for a second, <b>PRESS FIRE</b> skips the rest of it (the wait's frames still run, fast, so scoring is untouched, and the next race still opens with its starting gun); single events for one athlete instead of four; <b>run assist</b> (hold one direction and the athlete runs at a steady 12, 16 or 20 pushes a second, for keyboards, phones and anyone who can't waggle; the hint under the screen says when it's on); <b>best scores</b>: the game's own points for each event and the best decathlon total, each with the initials of the athlete who set it (asked as a game starts, and remembered), kept in this browser, with run-assisted scores kept apart (a decathlon with any assisted event counts as assisted); the <b>stadium</b>: a starting gun as each race opens, a crowd that builds through the race and roars at the finish, and cheers or a groan for every jump and throw (all synthesised; the cartridge has none of it); and a <b>3D stadium view</b>: the same game, picture for picture, rebuilt as a small stadium with lanes, shadows and a camera you can move. Your choices are remembered too.</p>
       </div>
       <div class="lp-card">
         <h3>Running</h3>
