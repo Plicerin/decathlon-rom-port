@@ -1,4 +1,4 @@
-// Decathlon Enhanced's stadium: a starting gun and a crowd, synthesised with
+// Decathlon Enhanced's stadium: a starting gun, a crowd and its groan, synthesised with
 // Web Audio (no recordings), beside the TIA sound. The crowd is pink noise
 // through the formants of an open "ah" (the sound of many voices at once),
 // slowly swelling, at a level the player sets each frame; the gun is a noise
@@ -113,6 +113,57 @@ export function createStadiumAudio() {
       tenv.gain.setValueAtTime(0.45, now); tenv.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
       thump.connect(tenv).connect(master);
       thump.start(now); thump.stop(now + 0.25);
+    },
+    // a groan, "aww": a chorus of voices, each at its own pitch (men's and
+    // women's), starting a moment apart and sliding down about a fifth,
+    // through the fixed resonances of the vowel "aw" (about 570, 840 and
+    // 2400 Hz), with a little breath. The vowel stays put while the voices
+    // fall, which is what makes it a crowd and not a filter sweep.
+    groan() {
+      if (!ctx) return;
+      const now = ctx.currentTime;
+      const voices = ctx.createGain();
+      voices.gain.value = 1;
+      for (let i = 0; i < 36; i += 1) {
+        const f0 = i % 2 ? 180 + Math.random() * 90 : 100 + Math.random() * 60;
+        const start = now + Math.random() * 0.22;
+        const length = 1.0 + Math.random() * 0.5;
+        const v = ctx.createOscillator();
+        v.type = 'sawtooth';
+        v.frequency.setValueAtTime(f0 * (1.04 + Math.random() * 0.04), start);
+        v.frequency.exponentialRampToValueAtTime(f0 * (0.72 + Math.random() * 0.08), start + length);
+        // a slow wobble, as a held voice has
+        const wobble = ctx.createOscillator(); wobble.frequency.value = 4 + Math.random() * 2;
+        const wobbleDepth = ctx.createGain(); wobbleDepth.gain.value = f0 * 0.012;
+        wobble.connect(wobbleDepth).connect(v.frequency);
+        const g = ctx.createGain();
+        const peak = (0.5 + Math.random() * 0.5) / 36;
+        g.gain.setValueAtTime(0, start);
+        g.gain.linearRampToValueAtTime(peak, start + 0.12 + Math.random() * 0.1);
+        g.gain.setTargetAtTime(0, start + length * 0.6, 0.18);
+        v.connect(g).connect(voices);
+        v.start(start); v.stop(start + length + 0.8);
+        wobble.start(start); wobble.stop(start + length + 0.8);
+      }
+      // breath: a little noise under the voices
+      const breath = ctx.createBufferSource();
+      breath.buffer = pink(1.8);
+      const breathLevel = ctx.createGain();
+      breathLevel.gain.setValueAtTime(0, now);
+      breathLevel.gain.linearRampToValueAtTime(0.05, now + 0.15);
+      breathLevel.gain.setTargetAtTime(0, now + 0.8, 0.3);
+      breath.connect(breathLevel).connect(voices);
+      breath.start(now); breath.stop(now + 1.8);
+      // the vowel "aw"
+      const vowel = ctx.createGain();
+      vowel.gain.value = 1.4;
+      for (const [freq, q, gain] of [[570, 6, 1], [840, 7, 0.75], [2400, 9, 0.22]]) {
+        const f = ctx.createBiquadFilter();
+        f.type = 'bandpass'; f.frequency.value = freq; f.Q.value = q;
+        const g = ctx.createGain(); g.gain.value = gain;
+        voices.connect(f).connect(g).connect(vowel);
+      }
+      vowel.connect(master); vowel.connect(echo);
     },
     setVolume(v) { volume = Math.max(0, Math.min(1, v)); if (master) master.gain.setTargetAtTime(silent ? 0 : volume, ctx.currentTime, 0.02); },
     setSilent(s) { silent = s; if (master) master.gain.setTargetAtTime(silent ? 0 : volume, ctx.currentTime, 0.02); },

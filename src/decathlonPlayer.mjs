@@ -144,6 +144,7 @@ export function mountPlayer(root) {
     const loud = enhanced('stadium');
     stadiumAudio.crowd(loud ? crowd.crowd : 0);
     if (loud && crowd.gun && !quiet) stadiumAudio.gun();
+    if (loud && crowd.groan && !quiet) stadiumAudio.groan();
     if (version === 'enhanced') {
       afterFrame(game.bus.ram, options);
       if (options.bests) {

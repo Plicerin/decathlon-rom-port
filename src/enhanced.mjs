@@ -50,26 +50,45 @@ export class RunAssist {
 // the result countdown starts ($F3 above $0F): the roar.
 const DISTANCE = 0xe4 & 0x7f;
 const RACE_LENGTH = { 0: 258, 4: 1026, 5: 281, 9: 5378 };
+// Field events: an attempt ends where the countdown starts (above $0F). Its
+// result is $8F-$91, six BCD digits in thousandths of a metre (8.66 m is
+// 00 86 60), and $F4 says how it went: $00 a mark (or the bar cleared), $44
+// SCRATCH or a foul, $51 MISSED (the bar down; the game itself tests $51 at
+// $F70D). A javelin landing behind the line is 0.00 with $00: no mark either.
+// The cheer grows with the mark against a strong one for the event (squared,
+// so a weak mark gets polite applause and a great one the full roar).
+const RESULT = 0x8f & 0x7f, MESSAGE = 0xf4 & 0x7f;
+const FIELD_MARK = { 1: 8, 2: 18, 3: 2.2, 6: 55, 7: 5, 8: 80 };
+const resultMetres = (ram) => Number([0, 1, 2].map((i) => ram[RESULT + i].toString(16).padStart(2, '0')).join('')) / 1000;
 const TITLE = 0xc5 & 0x7f;     // nonzero on the title screen: no game under way
 export class Stadium {
-  constructor() { this.lastWait = 0; this.roar = 0; }
-  // after every frame: { gun: fire it now, crowd: 0-1 }
+  constructor() { this.lastWait = 0; this.roar = 0; this.runUp = 0; }
+  // after every frame: { gun: fire it now, groan: a groan now, crowd: 0-1 }
   update(ram) {
-    const wait = ram[WAIT], length = RACE_LENGTH[ram[EVENT]];
+    const wait = ram[WAIT], event = ram[EVENT], length = RACE_LENGTH[event], mark = FIELD_MARK[event];
     const distance = ram[DISTANCE] * 256 + ram[DISTANCE + 1];
     const gun = !!length && this.lastWait === 1 && wait === 0 && distance === 0;
-    if (length && wait > 0x0f && this.lastWait <= 0x0f && distance >= length * 0.95) this.roar = 1;
+    const ended = wait > 0x0f && this.lastWait <= 0x0f; // a finish, or a field attempt's end
+    if (length && ended && distance >= length * 0.95) this.roar = 1;
+    let groan = false;
+    if (mark && ended) {
+      const metres = resultMetres(ram);
+      if (ram[MESSAGE] !== 0 || metres === 0) groan = true;
+      else this.roar = Math.max(this.roar, 0.3 + 0.7 * Math.min(1, metres / mark) ** 2);
+    }
+    // a field event's run-up: the crowd leans in over about four seconds
+    this.runUp = mark && wait === 0 && !ram[TITLE] ? Math.min(1, this.runUp + 1 / 240) : 0;
     this.lastWait = wait;
     this.roar *= 0.993; // about 1.6 s to halve
     let crowd;
     if (ram[TITLE]) crowd = 0;
-    else if (!length) crowd = 0.1;                       // field events: the stadium murmurs
+    else if (!length) crowd = 0.1 + 0.25 * this.runUp;   // field events: a murmur that builds with the run-up
     else if (wait > 0x0f || distance === 0) crowd = 0.14; // before the start, and the result
     else {
       const p = Math.min(1, distance / length);           // the race: builds, then surges to the line
       crowd = Math.min(1, 0.22 + 0.4 * p + Math.max(0, p - 0.75) * 1.6);
     }
-    return { gun, crowd: Math.max(crowd, this.roar) };
+    return { gun, groan, crowd: groan ? 0.08 : Math.max(crowd, this.roar) };
   }
 }
 
