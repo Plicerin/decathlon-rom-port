@@ -3,7 +3,7 @@
 // RAM, RIOT timer and switches, and the TIA model (tia.mjs), which rasterizes
 // frames and latches collisions. this.cpu is attached by the owner and only
 // its cycle counter is read here.
-import { TIA as TiaChip, CYCLES_PER_LINE } from './tia.mjs';
+import { TIA as TiaChip, CYCLES_PER_LINE } from './tia.mjs?v=a4de5feb';
 
 export { CYCLES_PER_LINE };
 

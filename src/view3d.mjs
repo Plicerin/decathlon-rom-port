@@ -26,7 +26,7 @@
 // The hurdles, and the high jump's and pole vault's standards, are built as
 // two uprights and a crossbar. Plain WebGL2, no library.
 
-import { OBJECT } from './tia.mjs';
+import { OBJECT } from './tia.mjs?v=a4de5feb';
 
 // the picture's bands, in rows from the first visible line (41)
 const WALL = [0, 30];          // lines 41-70
@@ -208,6 +208,7 @@ export function createView3D(canvas) {
   const decalPx = new Uint8Array(160 * (TRACK[1] - DECALS) * 4);
   const matPx = new Uint8Array(160 * (FEET + 1 - TRACK[0]) * 4);
   const cameras = new Map();
+  let aimX = AIM_X; // the camera's aim along the track (world x), eased in the high jump and the pole vault
   const upload = (texture, px, width, lines, mip) => {
     gl.bindTexture(gl.TEXTURE_2D, texture);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, lines, 0, gl.RGBA, gl.UNSIGNED_BYTE, px);
@@ -230,10 +231,11 @@ export function createView3D(canvas) {
     // target, so uprights stay upright across the view (looking down would
     // lean them out toward the edges); the lens is lengthened to keep the
     // target's size
-    camera(pitch, yaw, zoom, aimZ, aspect) {
-      const key = `${pitch.toFixed(3)}:${yaw.toFixed(3)}:${zoom.toFixed(1)}:${aimZ.toFixed(1)}:${aspect.toFixed(3)}`;
+    camera(pitch, yaw, zoom, aimZ, aspect, aim = AIM_X) {
+      const key = `${pitch.toFixed(3)}:${yaw.toFixed(3)}:${zoom.toFixed(1)}:${aimZ.toFixed(1)}:${aspect.toFixed(3)}:${aim.toFixed(1)}`;
       if (cameras.has(key)) return cameras.get(key);
-      const target = [AIM_X, 14, aimZ];
+      if (cameras.size > 400) cameras.clear(); // a moving aim makes many
+      const target = [aim, 14, aimZ];
       const eye = [target[0] + zoom * Math.sin(yaw) * Math.cos(pitch), target[1] + zoom * Math.sin(pitch), target[2] + zoom * Math.cos(yaw) * Math.cos(pitch)];
       const lens = perspective(0.7, aspect, 5, 9000), f = lens[5];
       lens[0] *= Math.cos(pitch); lens[5] *= Math.cos(pitch);
@@ -392,7 +394,18 @@ export function createView3D(canvas) {
       const track0 = z(TRACK[0]), track1 = track0 + LANES * laneW;
       const laneZ = (k) => track0 + laneW * (k + 0.5);
       const at = field ? track0 + LANES * laneW / 2 : laneZ(lane); // where the athlete is: his lane, or the middle of the track
-      const m = this.camera(pitch, yaw, zoom, at - 6, W / H);
+      // the high jump and the pole vault: the athlete runs across the picture to
+      // the bar, at its right, out of the usual view. The camera follows, aimed
+      // 40% of the way from the athlete to the far end of the bar (at first the
+      // pole he carries), eased, so the bar is seen coming and the jump is in the middle
+      if (bars) {
+        let a = 160, s = -1;
+        for (let i = 0; i < boxes.length; i += 5) a = Math.min(a, boxes[i]);
+        for (let i = 0; i < scenery.length; i += 5) s = Math.max(s, scenery[i]);
+        const aimTo = boxes.length && s >= 0 ? Math.max(AIM_X, 2 * (a + 0.4 * (s - a))) : aimX; // world x = picture x * 2
+        aimX += (aimTo - aimX) * 0.08;
+      } else aimX = AIM_X;
+      const m = this.camera(pitch, yaw, zoom, at - 6, W / H, Math.round(aimX * 2) / 2);
       const far = 4000, u = (x) => x / 320;
       gl.enable(gl.DEPTH_TEST);
       gl.useProgram(texProg);

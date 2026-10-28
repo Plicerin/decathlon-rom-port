@@ -149,6 +149,7 @@
     .initials { position: absolute; inset: 0; z-index: 3; display: grid; place-content: center; justify-items: center; gap: 12px; padding: 10px; border-radius: 6px; background: rgba(8, 10, 26, 0.86); color: var(--lp-ink); font: 11px ui-monospace, "Cascadia Mono", monospace; letter-spacing: 1px; text-transform: uppercase; text-align: center; }
     .initials[hidden] { display: none; }
     .initials p { margin: 0; }
+    .initials .initials-hint { font-size: 9.5px; color: var(--lp-ink-3); text-transform: none; letter-spacing: 0.5px; }
     .initials-fields { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; }
     .initials label { display: grid; justify-items: center; gap: 5px; font-size: 10px; color: var(--lp-ink-3); }
     .initials input { width: 3.4em; padding: 6px 4px; border: 1px solid var(--lp-line-2); border-radius: 8px; background: var(--lp-panel); color: var(--lp-ink); font: 700 22px ui-monospace, "Cascadia Mono", monospace; letter-spacing: 3px; text-align: center; text-transform: uppercase; }
@@ -301,6 +302,7 @@
         <p>Initials for the best scores</p>
         <div class="initials-fields" data-initials-fields></div>
         <button class="lp-btn primary" type="submit">Start</button>
+        <p class="initials-hint" data-initials-hint></p>
       </form>
     </div>
     <div id="status-line" data-hint aria-live="polite">Press Power on, then Game Select to pick a game</div>
@@ -450,6 +452,6 @@
   </footer>
 </main>
 
-<script type="module" src="src/page.mjs"></script>
+<script type="module" src="src/page.mjs?v=57b768d0"></script>
 </body>
 </html>

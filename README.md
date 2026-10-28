@@ -73,6 +73,13 @@ passes each frame's sound register writes to the audio worklet with their
 cycle in the frame (`src/tiaAudio.mjs`, `src/tiaSound.worklet.js`), and the
 worklet plays each one at its moment.
 
+### Module versions
+
+Every module address in `src/` and the page's script tag carries `?v=` and a
+hash of the file it loads, so a browser never runs a new page with modules
+cached from an older one. After changing anything in `src/`, run
+`node tools/stamp.mjs` (`--check` reports whether the stamps are up to date).
+
 ## The annotated disassembly
 
 `decathlon.asm` is the disassembly with names: the TIA and RIOT registers, a

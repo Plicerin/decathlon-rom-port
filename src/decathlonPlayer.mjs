@@ -7,13 +7,13 @@
 // Two versions: Original (the cartridge as it is) and Enhanced (enhanced.mjs:
 // quality-of-life options layered on the same translated game).
 // Mount with mountPlayer(root); root holds the canvas and the [data-*] controls.
-import { DecathlonMachine } from './decathlonMachine.mjs';
-import { NTSC_PALETTE_RGB } from './palette.mjs';
-import { createTiaAudio } from './tiaAudio.mjs';
-import { readGamepad, gamepadEdges } from './gamepad.mjs';
-import { ENHANCED_OPTIONS, waiting, longWait, singleEvent, afterFrame, CONTINUE_PIXELS, MESSAGE_INK, RunAssist, Bests, cleanInitials, Stadium, SPEED, SideBySide, isRace } from './enhanced.mjs';
-import { createStadiumAudio } from './stadiumAudio.mjs';
-import { createView3D } from './view3d.mjs';
+import { DecathlonMachine } from './decathlonMachine.mjs?v=41de39b3';
+import { NTSC_PALETTE_RGB } from './palette.mjs?v=12010e3d';
+import { createTiaAudio } from './tiaAudio.mjs?v=a91972a4';
+import { readGamepad, gamepadEdges } from './gamepad.mjs?v=c79c8e58';
+import { ENHANCED_OPTIONS, waiting, longWait, singleEvent, afterFrame, CONTINUE_PIXELS, MESSAGE_INK, RunAssist, Bests, cleanInitials, Stadium, SPEED, SideBySide, isRace } from './enhanced.mjs?v=b908fa2d';
+import { createStadiumAudio } from './stadiumAudio.mjs?v=f0f4bfa9';
+import { createView3D } from './view3d.mjs?v=a8e5f80a';
 
 export const FIRST_LINE = 41;    // VBLANK goes off in frame line 41 and back on in line 231
 export const VISIBLE_LINES = 190;
@@ -59,7 +59,7 @@ export function mountPlayer(root) {
   // a key or button released before the next frame still counts for that frame
   const tapped = new Set();
   const touch = matchMedia('(pointer: coarse)').matches;
-  const audio = createTiaAudio(new URL('./tiaSound.worklet.js', import.meta.url).href);
+  const audio = createTiaAudio(new URL('./tiaSound.worklet.js?v=9b58a54c', import.meta.url).href);
   const stadiumAudio = createStadiumAudio(); // Enhanced: the starting gun and the crowd
   const stadium = new Stadium();
   const screen = document.createElement('canvas');
@@ -107,6 +107,9 @@ export function mountPlayer(root) {
   let initials = ['', '', '', ''];
   try { const saved = JSON.parse(store.get('decathlon-initials') ?? '[]'); initials = initials.map((_, i) => cleanInitials(saved?.[i])); } catch { /* none yet */ }
   let asking = false, wasTitle = true;
+  // arcade style with the stick: up and down turn the letter under the cursor,
+  // left and right move it, the button goes on to the next letter (past the last, the next athlete)
+  const cursor = { athlete: 0, slot: 0 }, padHeld = {}; // padHeld: when each was pressed (ms) or the next repeat is due
   let bests;
   const savedBests = () => { try { return JSON.parse(store.get('decathlon-bests') ?? 'null'); } catch { return null; } };
   bests = new Bests(savedBests());
@@ -302,8 +305,9 @@ export function mountPlayer(root) {
     if ((edges.start || edges.back) && !started) { play(); padWake = true; }
     if (padWake && !pad?.start && !pad?.back) padWake = false;
     // the hint names the pad's buttons or the keys, so it changes even while paused
-    if (!!pad !== padShown) { padShown = !!pad; showNote(); if (started) setHint(eventHint() || startHint()); }
+    if (!!pad !== padShown) { padShown = !!pad; showNote(); showInitialsHint(); if (started) setHint(eventHint() || startHint()); }
     if (asking && edges.start) endInitials(); // the pad's Start takes the initials as they are
+    else if (asking) initialsPad();
     if (!paused && !asking && !document.hidden) {
       acc += dt;
       while (acc >= FRAME_MS && !asking) { step(); acc -= FRAME_MS; }
@@ -495,15 +499,84 @@ export function mountPlayer(root) {
       input.setAttribute('autocapitalize', 'characters');
       input.setAttribute('aria-label', `Athlete ${i + 1}'s initials`);
       input.addEventListener('input', () => { const v = cleanInitials(input.value); if (input.value !== v) input.value = v; });
+      input.addEventListener('focus', () => { cursor.athlete = i; });
+      // the keyboard's up and down arrows turn the letter at the caret, as the stick does
+      input.addEventListener('keydown', (event) => {
+        if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+        event.preventDefault();
+        cursor.athlete = i; cursor.slot = input.selectionStart ?? 0;
+        turnLetter(event.key === 'ArrowUp' ? 1 : -1);
+      });
       label.append(input);
       return label;
     }));
     asking = true;
     initialsForm.hidden = false;
     silence();
+    showInitialsHint();
+    // a stick or button already held as the question comes up isn't a press
+    for (const k of ['up', 'down', 'left', 'right', 'fire']) padHeld[k] = pad?.[k] ? Infinity : 0;
+    cursor.athlete = 0; cursor.slot = 0;
     const first = initialsFields.querySelector('input');
     first.focus({ preventScroll: true });
     first.select();
+  }
+  const initialsInputs = () => [...initialsFields.querySelectorAll('input')];
+  const initialsHint = root.querySelector('[data-initials-hint]');
+  function showInitialsHint() {
+    if (!initialsHint) return;
+    initialsHint.textContent = pad ? 'Stick ↑↓ letter · ←→ move · button: next · Start: done'
+      : touch ? 'Tap a box to type' : 'Type, or ↑↓ to pick letters · Enter to start';
+  }
+  // the cursor's letter shown selected (or the caret, after the last letter)
+  function showCursor() {
+    const input = initialsInputs()[cursor.athlete];
+    if (!input) return;
+    const j = Math.min(cursor.slot, input.value.length);
+    input.focus({ preventScroll: true });
+    input.setSelectionRange(j, Math.min(j + 1, input.value.length));
+  }
+  // the letter under the cursor one on (dir 1) or back (-1), A to Z round; an empty place starts at A (or Z going back)
+  function turnLetter(dir) {
+    const input = initialsInputs()[cursor.athlete];
+    if (!input) return;
+    const v = input.value, j = Math.min(cursor.slot, v.length, 2);
+    const code = v[j] ? (v.charCodeAt(j) - 65 + dir + 26) % 26 : (dir > 0 ? 0 : 25);
+    input.value = v.slice(0, j) + String.fromCharCode(65 + code) + v.slice(j + 1);
+    cursor.slot = j;
+    showCursor();
+  }
+  // the cursor along the letters: a place past the last letter only if it's
+  // the next one to fill; beyond an athlete's letters, the next or last
+  // athlete's. finish: past the last athlete, the question is answered
+  function moveCursor(dir, finish = false) {
+    const inputs = initialsInputs();
+    const last = (k) => Math.min(2, inputs[k].value.length);
+    let { athlete, slot } = cursor;
+    slot = Math.min(slot, last(athlete)) + dir;
+    if (slot > last(athlete)) {
+      if (athlete === inputs.length - 1) { if (finish) endInitials(); return; }
+      athlete += 1; slot = 0;
+    } else if (slot < 0) {
+      if (athlete === 0) return;
+      athlete -= 1; slot = last(athlete);
+    }
+    cursor.athlete = athlete; cursor.slot = slot;
+    showCursor();
+  }
+  // the pad while the question is up: a press acts at once, a stick held
+  // repeats after 0.4 s, ten times a second
+  function initialsPad() {
+    const now = performance.now();
+    for (const k of ['up', 'down', 'left', 'right', 'fire']) {
+      if (!pad?.[k]) { padHeld[k] = 0; continue; }
+      if (!padHeld[k]) padHeld[k] = k === 'fire' ? Infinity : now + 400;
+      else if (now < padHeld[k]) continue;
+      else padHeld[k] = now + 100;
+      if (k === 'up' || k === 'down') turnLetter(k === 'up' ? 1 : -1);
+      else moveCursor(k === 'left' ? -1 : 1, k === 'fire');
+      if (!asking) return;
+    }
   }
   function endInitials() {
     if (!asking) return;

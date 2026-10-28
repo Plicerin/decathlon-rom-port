@@ -3,10 +3,10 @@
 // cartridge's data tables in ROM space. runFrame() plays one frame, up to the
 // next VSYNC; the finished picture is in bus.tia.lastFrame and the sound
 // registers in bus.audio.
-import { M6502 } from './cpu6502.mjs';
-import { VcsBus } from './vcsBus.mjs';
-import { romImage } from './decathlonRomData.mjs';
-import { run } from './decathlonRecomp.mjs';
+import { M6502 } from './cpu6502.mjs?v=02add8a9';
+import { VcsBus } from './vcsBus.mjs?v=944d67b0';
+import { romImage } from './decathlonRomData.mjs?v=61386bdc';
+import { run } from './decathlonRecomp.mjs?v=e64cc6bd';
 
 export class DecathlonMachine {
   constructor() {
