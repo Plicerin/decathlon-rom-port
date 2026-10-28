@@ -11,8 +11,9 @@ import { DecathlonMachine } from './decathlonMachine.mjs';
 import { NTSC_PALETTE_RGB } from './palette.mjs';
 import { createTiaAudio } from './tiaAudio.mjs';
 import { readGamepad, gamepadEdges } from './gamepad.mjs';
-import { ENHANCED_OPTIONS, waiting, longWait, singleEvent, afterFrame, CONTINUE_PIXELS, MESSAGE_INK, RunAssist, Bests, Stadium } from './enhanced.mjs';
+import { ENHANCED_OPTIONS, waiting, longWait, singleEvent, afterFrame, CONTINUE_PIXELS, MESSAGE_INK, RunAssist, Bests, Stadium, SPEED, SideBySide, isRace } from './enhanced.mjs';
 import { createStadiumAudio } from './stadiumAudio.mjs';
+import { createView3D } from './view3d.mjs';
 
 export const FIRST_LINE = 41;    // VBLANK goes off in frame line 41 and back on in line 231
 export const VISIBLE_LINES = 190;
@@ -40,7 +41,7 @@ const EVENTS = [
 ];
 
 export function mountPlayer(root) {
-  const canvas = root.querySelector('canvas');
+  const canvas = root.querySelector('canvas:not([data-view3d])');
   const ctx = canvas.getContext('2d');
   const playButton = root.querySelector('[data-play]');
   const poster = root.querySelector('[data-poster]');
@@ -65,6 +66,10 @@ export function mountPlayer(root) {
   screen.height = VISIBLE_LINES;
   const screenCtx = screen.getContext('2d');
   const image = screenCtx.createImageData(160, VISIBLE_LINES);
+  // Enhanced's 3D view draws on its own canvas over this one (which keeps the keyboard focus)
+  const glCanvas = root.querySelector('[data-view3d]');
+  let view3d = null, view3dTried = false;
+  const sideBySide = new SideBySide(); // the 3D view's athletes who have run, in their lanes
 
   let started = false, paused = false, muted = false;
   const down = { select: false, reset: false };
@@ -145,6 +150,8 @@ export function mountPlayer(root) {
     stadiumAudio.crowd(loud ? crowd.crowd : 0);
     if (loud && crowd.gun && !quiet) stadiumAudio.gun();
     if (loud && crowd.groan && !quiet) stadiumAudio.groan();
+    // the 3D view records each athlete's race (it needs the TIA's object layer, on while the view is)
+    if (enhanced('view3d') && game.bus.tia.lastObjects) sideBySide.update(game.bus.ram, game.bus.tia.lastFrame, game.bus.tia.lastObjects, NTSC_PALETTE_RGB);
     if (version === 'enhanced') {
       afterFrame(game.bus.ram, options);
       if (options.bests) {
@@ -193,6 +200,34 @@ export function mountPlayer(root) {
         const o = ((y - FIRST_LINE) * 160 + x) * 4;
         data[o] = rgb >> 16; data[o + 1] = (rgb >> 8) & 0xff; data[o + 2] = rgb & 0xff;
       }
+    }
+    // Enhanced 3D view: the same picture as a diorama on the WebGL canvas
+    const tia = game.bus.tia;
+    const want3d = enhanced('view3d') && glCanvas;
+    tia.recordObjects = !!want3d;
+    if (want3d && !view3dTried) { view3dTried = true; try { view3d = createView3D(glCanvas); } catch (error) { console.warn('3D view unavailable:', error); } }
+    const show3d = !!(want3d && view3d && tia.lastObjects);
+    if (glCanvas) glCanvas.hidden = !show3d;
+    canvas.style.opacity = show3d ? '0' : '';
+    if (show3d) {
+      const rad = (deg) => (Number(deg) || 0) * Math.PI / 180;
+      view3d.draw(data, tia.lastObjects.slice(FIRST_LINE, FIRST_LINE + VISIBLE_LINES), {
+        pitch: rad(options.pitch), yaw: rad(options.yaw), zoom: Number(options.zoom) || 190, stretch: Number(options.stretch) || 1,
+        depth: Number(options.depth) || 0,
+        trails: !!options.trails,
+        speed: Math.min(1, game.bus.ram[SPEED] / 84),
+        // with more than one athlete each has a lane ($82: athletes - 1, 4 in a single event; $83: whose turn)
+        lane: game.bus.ram[0x82 & 0x7f] && !(enhanced('soloEvents') && singleEvent(game.bus.ram)) ? game.bus.ram[0x83 & 0x7f] & 3 : 0,
+        ghosts: sideBySide.beside(game.bus.ram, FIRST_LINE),
+        race: isRace(game.bus.ram),
+        field: !isRace(game.bus.ram),
+        javelin: game.bus.ram[0x80 & 0x7f] === 8,
+        hurdles: game.bus.ram[0x80 & 0x7f] === 5, // the event ($80): 5, the 110 m hurdles
+        bars: [3, 7].includes(game.bus.ram[0x80 & 0x7f]), // the high jump, the pole vault
+        // a result (the countdown above $0F) or the title ($C5) shows the scoreboard
+        scoreboard: longWait(game.bus.ram) || game.bus.ram[0xc5 & 0x7f] !== 0,
+      });
+      return;
     }
     screenCtx.putImageData(image, 0, 0);
     ctx.imageSmoothingEnabled = false;
@@ -366,6 +401,8 @@ export function mountPlayer(root) {
     const key = box.dataset.option;
     const isCheck = box.type === 'checkbox';
     if (isCheck) box.checked = !!options[key]; else box.value = String(options[key]);
+    // sliders follow while they move
+    if (box.type === 'range') box.addEventListener('input', () => { options[key] = Number(box.value); store.set('decathlon-enhanced', JSON.stringify(options)); });
     box.addEventListener('change', () => {
       options[key] = isCheck ? box.checked : Number(box.value);
       if (key === 'bests') showBests();
@@ -415,6 +452,8 @@ export function mountPlayer(root) {
     // Enhanced's fast-forward without the animation loop
     skip() { while (skipping && waiting(game.bus.ram)) step(true); skipping = false; setHint(eventHint() || startHint()); },
     get skipping() { return skipping; },
+    // the 3D view's state, for checks
+    get view3d() { return { tried: view3dTried, ready: !!view3d, shown: glCanvas ? !glCanvas.hidden : false }; },
     play,
   };
 }

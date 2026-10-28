@@ -51,6 +51,22 @@ const NAME = [];
 for (const [name, reg] of Object.entries(R)) NAME[reg] = name;
 const COLOR_REGS = new Set([0x06, 0x07, 0x08, 0x09, 0x0a]);
 
+// the object whose colour shows for each object mask (bit 6: playfield
+// priority, CTRLPF bit 2), as rebuildColors decides it: OBJECT codes
+export const OBJECT = { background: 0, playfield: 1, p0: 2, p1: 3, m0: 4, m1: 5, ball: 6 };
+const WINNER = Uint8Array.from({ length: 128 }, (_, i) => {
+  const mask = i & 63, pri = i & 64;
+  if (pri && (mask & 32)) return 1;
+  if (pri && (mask & 16)) return 6;
+  if (mask & 1) return 2;
+  if (mask & 4) return 4;
+  if (mask & 2) return 3;
+  if (mask & 8) return 5;
+  if (mask & 32) return 1;
+  if (mask & 16) return 6;
+  return 0;
+});
+
 export class TIA {
   constructor() {
     this.s = {
@@ -70,6 +86,11 @@ export class TIA {
     this.beam = 0;              // next pixel time to rasterize: line * 228 + color clock
     this.hmoveLine = -1;        // line whose first 8 pixels an HMOVE blanked
     this.lastFrame = null;
+    // optional: which object won each pixel (OBJECT codes), for presentation
+    // layers such as Decathlon Enhanced's 3D view; off unless recordObjects is set
+    this.recordObjects = false;
+    this.objects = null;
+    this.lastObjects = null;
   }
 
   newFrame() { return Array.from({ length: LINES_PER_FRAME + 20 }, () => new Uint8Array(160)); }
@@ -150,8 +171,11 @@ export class TIA {
       if (clock < 68) { this.beam = Math.min(t, line * 228 + 68); continue; }
       const x0 = clock - 68, x1 = Math.min(160, x0 + (t - this.beam));
       const row = this.frame[line];
+      if (this.recordObjects && !this.objects) this.objects = this.newFrame();
+      const objRow = this.recordObjects ? this.objects[line] : null;
       if (this.s.VBLANK & 2) {
         if (row) row.fill(0, x0, x1);
+        if (objRow) objRow.fill(0, x0, x1);
       } else {
         const blank = this.hmoveLine === line ? 8 : 0;
         for (let x = x0; x < x1; x += 1) {
@@ -159,6 +183,7 @@ export class TIA {
           const mask = p0[x] | (p1[x] << 1) | (m0[x] << 2) | (m1[x] << 3) | (bl[x] << 4) | (this.pfLatch << 5);
           if (OVERLAP[mask]) { const bits = COLLIDE[mask]; for (let r = 0; r < 8; r += 1) cx[r] |= bits[r]; }
           if (row) row[x] = x < blank ? 0 : (x < 80 ? this.colorsL : this.colorsR)[mask];
+          if (objRow) objRow[x] = x < blank ? 0 : WINNER[(this.s.CTRLPF & 4) ? mask | 64 : mask];
         }
       }
       this.beam += x1 - x0;
@@ -212,6 +237,7 @@ export class TIA {
     this.rasterize(TIA.time(cycle));
     this.lastFrame = this.frame;
     this.frame = this.newFrame();
+    if (this.recordObjects) { this.lastObjects = this.objects; this.objects = this.newFrame(); }
     this.beam = TIA.time(cycleInNewFrame);
     this.hmoveLine = -1;
   }

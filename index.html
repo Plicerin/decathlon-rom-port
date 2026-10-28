@@ -133,6 +133,9 @@
       body.fs .fire { width: 76px; height: 76px; }
     }
     .tv { position: relative; }
+    /* Enhanced's 3D view: drawn over the picture, which stays underneath for the keyboard */
+    .tv canvas.view3d { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; image-rendering: auto; }
+    .tv canvas.view3d[hidden] { display: none; }
     .tv canvas, .poster img {
       display: block; width: 100%; height: auto; aspect-ratio: 640 / 380;
       image-rendering: pixelated; image-rendering: crisp-edges;
@@ -268,6 +271,7 @@
 
   <div id="play" class="canvas-shell">
     <div class="tv">
+      <canvas class="view3d" width="1280" height="760" data-view3d hidden aria-hidden="true"></canvas>
       <canvas width="640" height="380" tabindex="0" aria-label="The Activision Decathlon. Arrow keys or WASD for the joystick: left and right in turn to run. Space or Z for the fire button. X for Game Select, Enter for Game Reset."></canvas>
       <div class="tv-note" data-note hidden></div>
       <div class="poster" data-poster>
@@ -317,6 +321,13 @@
       </select></label>
       <label><input type="checkbox" data-option="bests"> Keep personal bests</label>
       <label><input type="checkbox" data-option="stadium"> Stadium sound: starting gun and crowd</label>
+      <label><input type="checkbox" data-option="view3d"> 3D view</label>
+      <label>Camera height <input type="range" min="8" max="75" step="1" data-option="pitch" aria-label="3D camera height"></label>
+      <label>Turn <input type="range" min="-40" max="40" step="1" data-option="yaw" aria-label="3D camera turn"></label>
+      <label>Zoom <input type="range" min="120" max="700" step="10" data-option="zoom" aria-label="3D zoom"></label>
+      <label>Ground depth <input type="range" min="0.6" max="3" step="0.1" data-option="stretch" aria-label="3D ground depth"></label>
+      <label>Thickness <input type="range" min="0" max="8" step="0.5" data-option="depth" aria-label="3D thickness"></label>
+      <label><input type="checkbox" data-option="trails"> Trails</label>
     </div>
   </div>
   <div class="lp-bests" data-bests hidden>
@@ -424,7 +435,7 @@
   const canNative = !!(document.fullscreenEnabled || document.webkitFullscreenEnabled);
   const setFull = (on) => {
     document.body.classList.toggle('fs', on);
-    shell.querySelector('canvas').focus({ preventScroll: true });
+    shell.querySelector('canvas:not([data-view3d])').focus({ preventScroll: true });
   };
   const enter = () => {
     setFull(true);

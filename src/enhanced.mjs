@@ -25,7 +25,17 @@ export const ENHANCED_OPTIONS = {
   runAssist: { label: 'Run assist', default: 0 },
   bests: { label: 'Keep personal bests', default: true },
   stadium: { label: 'Stadium sound: starting gun and crowd', default: true },
+  // the 3D view (view3d.mjs) and its settings while we tune it
+  view3d: { label: '3D view', default: false },
+  pitch: { label: 'Camera height (degrees above the track)', default: 32 },
+  yaw: { label: 'Turn (degrees)', default: -20 },
+  zoom: { label: 'Zoom (distance)', default: 190 },
+  stretch: { label: 'Ground depth', default: 1.4 },
+  depth: { label: 'Thickness (pixels)', default: 3 },
+  trails: { label: 'Trails', default: true },
 };
+export const isRace = (ram) => !!RACE_LENGTH[ram[EVENT]];
+export const SPEED = 0xdb & 0x7f; // the athlete's speed: about 84 flat out, 0 standing (the button waits for it)
 
 // Run assist: holding one direction (key, half of the touch pad, stick) makes
 // the pushes at a steady rate, as alternating left and right by hand would.
@@ -89,6 +99,68 @@ export class Stadium {
       crowd = Math.min(1, 0.22 + 0.4 * p + Math.max(0, p - 0.75) * 1.6);
     }
     return { gun, groan, crowd: groan ? 0.08 : Math.max(crowd, this.roar) };
+  }
+}
+
+// Side by side: in a race with more than one athlete the game runs them one
+// after another; the 3D view runs the ones who have gone beside the one
+// running, in their own lanes. Each athlete's run is recorded frame by frame
+// from his first stride: the distance ($E4:$E5) and his figure (the sprite
+// pixels at the picture's left, x 8-47, lines 116-166 (jumps included), where he runs while the
+// picture scrolls). A recorded athlete is drawn at the same moment of his own
+// race, ahead or behind by the difference in distance: the picture scrolls
+// about 3.9 pixels per unit (measured: a hurdle crosses 30 pixels while the
+// distance goes up 8). A new decathlon (athlete 1 starting the 100 m) clears
+// the records.
+const PX_PER_UNIT = 3.9;
+const FIGURE_ROWS = [116, 167], FIGURE_COLS = [8, 48];
+export class SideBySide {
+  constructor() { this.runs = new Map(); this.current = null; this.lastDistance = 0; }
+  // after every frame: the frame's colour rows and object rows (absolute
+  // lines, as the TIA keeps them) and the palette (index -> 0xRRGGBB)
+  update(ram, frame, objects, palette) {
+    const event = ram[EVENT], athlete = ram[ATHLETE] & 3;
+    const distance = ram[DISTANCE] * 256 + ram[DISTANCE + 1];
+    const racing = RACE_LENGTH[event] && ram[ATHLETES] > 0 && !ram[TITLE];
+    const started = racing && ram[WAIT] === 0 && distance > 0 && this.lastDistance === 0;
+    this.lastDistance = distance;
+    if (!racing) { this.current = null; return; }
+    if (started) {
+      if (event === 0 && athlete === 0) this.runs.clear();
+      this.current = { key: event * 4 + athlete, frames: [], done: false };
+      this.runs.set(this.current.key, this.current.frames);
+    }
+    const run = this.current;
+    if (!run || run.done) return;
+    if (ram[WAIT] > 0x0f) { run.done = true; return; } // over the line
+    const px = [];
+    for (let y = FIGURE_ROWS[0]; y < FIGURE_ROWS[1]; y += 1) {
+      for (let x = FIGURE_COLS[0]; x < FIGURE_COLS[1]; x += 1) {
+        if (objects[y][x] < 2 || objects[y][x] > 3) continue; // the two player sprites: not the hurdles (ball, missiles)
+        const rgb = palette[(frame[y][x] >> 1) & 0x7f];
+        px.push(x, y, rgb >> 16, (rgb >> 8) & 0xff, rgb & 0xff);
+      }
+    }
+    run.frames.push({ distance, pixels: Uint8Array.from(px) });
+  }
+  // the athletes who have run this race, at the same moment of theirs as the
+  // running athlete is of his: [{ lane, dx (pixels ahead), pixels (picture rows from line 41, colours 0-1) }]
+  beside(ram, firstLine) {
+    const event = ram[EVENT], athlete = ram[ATHLETE] & 3;
+    if (!RACE_LENGTH[event] || ram[ATHLETES] === 0 || ram[TITLE]) return [];
+    const mine = this.current?.key === event * 4 + athlete ? this.current.frames : null;
+    const t = mine && mine.length ? mine.length - 1 : 0;
+    const myDistance = mine && mine.length ? mine[t].distance : 0;
+    const out = [];
+    for (let k = 0; k < 4; k += 1) {
+      const frames = k === athlete ? null : this.runs.get(event * 4 + k);
+      if (!frames || !frames.length) continue;
+      const f = frames[Math.min(t, frames.length - 1)];
+      const pixels = [];
+      for (let i = 0; i < f.pixels.length; i += 5) pixels.push(f.pixels[i], f.pixels[i + 1] - firstLine, f.pixels[i + 2] / 255, f.pixels[i + 3] / 255, f.pixels[i + 4] / 255);
+      out.push({ lane: k, dx: (f.distance - myDistance) * PX_PER_UNIT, pixels });
+    }
+    return out;
   }
 }
 
