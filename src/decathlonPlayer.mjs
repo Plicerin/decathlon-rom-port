@@ -13,7 +13,7 @@ import { createTiaAudio } from './tiaAudio.mjs?v=a91972a4';
 import { readGamepad, gamepadEdges } from './gamepad.mjs?v=c79c8e58';
 import { ENHANCED_OPTIONS, waiting, longWait, singleEvent, afterFrame, CONTINUE_PIXELS, MESSAGE_INK, RunAssist, Bests, cleanInitials, Stadium, SPEED, SideBySide, isRace } from './enhanced.mjs?v=b908fa2d';
 import { createStadiumAudio } from './stadiumAudio.mjs?v=f0f4bfa9';
-import { createView3D } from './view3d.mjs?v=d084ecbd';
+import { createView3D } from './view3d.mjs?v=637ff454';
 
 export const FIRST_LINE = 41;    // VBLANK goes off in frame line 41 and back on in line 231
 export const VISIBLE_LINES = 190;
@@ -101,7 +101,7 @@ export function mountPlayer(root) {
   const assist = new RunAssist();
   let assistUsed = false; // run assist made pushes in this athlete's turn at this event
   const assistedAthletes = new Set(); // athletes with an assisted event in this game: their totals are assisted too
-  let lastTurn = '', scoreWait = 0;
+  let lastTurn = '', scoreWait = 0, waitFrom = 0;
   // Enhanced best scores: each athlete's initials, asked for as a game starts
   // (the game waits meanwhile) and remembered for the next one
   let initials = ['', '', '', ''];
@@ -192,6 +192,9 @@ export function mountPlayer(root) {
     // run assist, followed whatever the options: an athlete's score (the $C0
     // milestone) with assist marks his decathlon total as assisted; a new game clears that
     const scored = scoreWait === 0xc0 && ram[0xf3 & 0x7f] === 0xbf;
+    // where this wait started: $FF after an event's result (the scoreboard
+    // shows from $BF, once the points are added), $3F between attempts (no scoreboard)
+    if (ram[0xf3 & 0x7f] > scoreWait) waitFrom = ram[0xf3 & 0x7f];
     scoreWait = ram[0xf3 & 0x7f];
     if (scored && assistUsed) assistedAthletes.add(ram[0x83 & 0x7f] & 3);
     if (ram[0xc5 & 0x7f]) assistedAthletes.clear();
@@ -279,8 +282,9 @@ export function mountPlayer(root) {
         javelin: game.bus.ram[0x80 & 0x7f] === 8,
         hurdles: game.bus.ram[0x80 & 0x7f] === 5, // the event ($80): 5, the 110 m hurdles
         bars: [3, 7].includes(game.bus.ram[0x80 & 0x7f]), // the high jump, the pole vault
-        // a result (the countdown above $0F) or the title ($C5) shows the scoreboard
-        scoreboard: longWait(game.bus.ram) || game.bus.ram[0xc5 & 0x7f] !== 0,
+        // a result (a wait from $FF, from $BF down to $10) or the title ($C5)
+        // shows the scoreboard; between attempts the athlete is still in its rows
+        scoreboard: (waitFrom > 0x40 && longWait(game.bus.ram) && game.bus.ram[0xf3 & 0x7f] < 0xc0) || game.bus.ram[0xc5 & 0x7f] !== 0,
         // the PRESS FIRE pixels (painted into the picture above), kept in the view's bottom strip
         prompt: prompt ? PROMPT_ROWS : null,
       });

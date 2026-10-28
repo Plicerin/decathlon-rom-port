@@ -406,7 +406,9 @@ export function createView3D(canvas) {
         let a = 160, s = -1;
         for (let i = 0; i < boxes.length; i += 5) a = Math.min(a, boxes[i]);
         for (let i = 0; i < scenery.length; i += 5) s = Math.max(s, scenery[i]);
-        const aimTo = boxes.length && s >= 0 ? Math.max(AIM_X, Math.min(2 * (a + 0.4 * (s - a)), 2 * a + 60)) : aimX; // world x = picture x * 2
+        // no bar in the picture (before it comes in, and back at the start for the next attempt): the usual aim
+        const ahead = s >= 0 ? 2 * (a + 0.4 * (s - a)) : AIM_X; // world x = picture x * 2
+        const aimTo = boxes.length ? Math.max(AIM_X, Math.min(ahead, 2 * a + 60)) : aimX;
         aimX += (aimTo - aimX) * 0.08;
       } else aimX = AIM_X;
       const m = this.camera(pitch, yaw, zoom, at - 6, W / H, Math.round(aimX * 2) / 2);

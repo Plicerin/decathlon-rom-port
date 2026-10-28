@@ -1,5 +1,5 @@
 // the page: mounts the player and runs the full-screen button
-import { mountPlayer } from './decathlonPlayer.mjs?v=661ae1f9';
+import { mountPlayer } from './decathlonPlayer.mjs?v=89c46fb7';
 const shell = document.getElementById('play');
 window.__decathlon = mountPlayer(shell.parentElement);
 // full screen: the browser's own where allowed (desktop, Android, iPad), and
