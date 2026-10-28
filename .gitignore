@@ -11,3 +11,5 @@ tools/build/
 tools/out/
 *.zip
 tmp/
+# the annotated disassembly reassembles to the cartridge: regenerate it locally (node tools/disasm.mjs)
+decathlon.asm

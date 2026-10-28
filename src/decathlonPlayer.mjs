@@ -83,7 +83,14 @@ export function mountPlayer(root) {
   // the version: 'original' or 'enhanced', and Enhanced's options
   let version = store.get('decathlon-version') === 'enhanced' ? 'enhanced' : 'original';
   const options = Object.fromEntries(Object.entries(ENHANCED_OPTIONS).map(([k, o]) => [k, o.default]));
-  try { Object.assign(options, JSON.parse(store.get('decathlon-enhanced') ?? '{}')); } catch { /* defaults */ }
+  // saved options: only the known ones, each of its default's type (the sliders and list then bring them within their limits)
+  try {
+    const saved = JSON.parse(store.get('decathlon-enhanced') ?? '{}');
+    for (const key of Object.keys(options)) {
+      const v = saved?.[key];
+      if (typeof options[key] === 'boolean' ? typeof v === 'boolean' : Number.isFinite(v)) options[key] = v;
+    }
+  } catch { /* defaults */ }
   const enhanced = (option) => version === 'enhanced' && options[option];
   let lastFire = false, skipping = false;
   // frames a skippable wait has been on screen: the button skips it only after
@@ -96,7 +103,10 @@ export function mountPlayer(root) {
   const assistedAthletes = new Set(); // athletes with an assisted event in this game: their totals are assisted too
   let lastTurn = '', scoreWait = 0;
   let bests;
-  try { bests = new Bests(JSON.parse(store.get('decathlon-bests') ?? 'null')); } catch { bests = new Bests(null); }
+  const savedBests = () => { try { return JSON.parse(store.get('decathlon-bests') ?? 'null'); } catch { return null; } };
+  bests = new Bests(savedBests());
+  // saved with what another tab may have saved since, so neither loses the other's records
+  const saveBests = () => { bests.merge(savedBests()); store.set('decathlon-bests', JSON.stringify(bests)); };
 
   const setHint = (text) => { if (hint && hint.textContent !== text) hint.textContent = text; };
   const name = (what) => {
@@ -181,7 +191,7 @@ export function mountPlayer(root) {
       afterFrame(ram, options);
       if (options.bests) {
         const beaten = bests.update(ram, assistUsed, assistedAthletes.has(ram[0x83 & 0x7f] & 3));
-        if (beaten) { store.set('decathlon-bests', JSON.stringify(bests)); showBests(beaten); }
+        if (beaten) { saveBests(); showBests(beaten); }
       }
     }
     // each athlete's turn at an event (and the title) starts with assist unused
@@ -269,7 +279,11 @@ export function mountPlayer(root) {
     ctx.drawImage(screen, 0, 0, canvas.width, canvas.height);
   }
 
+  // the next frame is asked for whatever happens in this one, so an error can't stop the game
   function frame(t) {
+    try { runFrame(t); } finally { requestAnimationFrame(frame); }
+  }
+  function runFrame(t) {
     if (!last) last = t;
     const dt = Math.min(100, t - last);
     last = t;
@@ -293,7 +307,6 @@ export function mountPlayer(root) {
       }
     }
     draw();
-    requestAnimationFrame(frame);
   }
 
   async function play() {
@@ -338,7 +351,8 @@ export function mountPlayer(root) {
     volumeSliders.forEach((s) => { s.value = String(v); });
     store.set('decathlon-volume', String(v));
   }
-  setVolume(Number(store.get('decathlon-volume') ?? 70));
+  const savedVolume = Number(store.get('decathlon-volume') ?? 70);
+  setVolume(Number.isFinite(savedVolume) ? Math.round(Math.max(0, Math.min(100, savedVolume))) : 70);
   volumeSliders.forEach((s) => {
     s.addEventListener('input', () => setVolume(Number(s.value)));
     // after a drag or click with the mouse; the keyboard keeps the slider for its arrows
@@ -356,7 +370,7 @@ export function mountPlayer(root) {
     if (control) { event.preventDefault(); keysDown.add(event.code); tapped.add(control); }
     if (event.code === 'Enter') { event.preventDefault(); if (!started) play(); down.reset = true; tapped.add('reset'); }
     if (event.code === 'KeyX') { down.select = true; tapped.add('select'); }
-    if (event.code === 'KeyP') togglePause();
+    if (event.code === 'KeyP' && started) togglePause();
     if (event.code === 'KeyM') toggleMute();
   });
   canvas.addEventListener('keyup', (event) => {
@@ -438,7 +452,9 @@ export function mountPlayer(root) {
     const key = box.dataset.option;
     const isCheck = box.type === 'checkbox';
     if (isCheck) box.checked = !!options[key]; else box.value = String(options[key]);
-    if (box.type === 'range') options[key] = Number(box.value); // a value saved from wider limits, brought within them
+    // a value saved from wider limits brought within them; one not in the list is off
+    if (box.tagName === 'SELECT' && box.selectedIndex < 0) box.selectedIndex = 0;
+    if (!isCheck) options[key] = Number(box.value);
     // sliders follow while they move
     if (box.type === 'range') box.addEventListener('input', () => { options[key] = Number(box.value); store.set('decathlon-enhanced', JSON.stringify(options)); });
     box.addEventListener('change', () => {
@@ -461,14 +477,27 @@ export function mountPlayer(root) {
   function showBests(beaten = null) {
     if (!bestsPanel) return;
     bestsPanel.hidden = !(version === 'enhanced' && options.bests);
-    const cell = (n, isNew) => `<td${isNew ? ' class="new"' : ''}>${n ? n.toLocaleString('en-US') : '–'}</td>`;
+    const cell = (tag, text, isNew = false) => {
+      const c = document.createElement(tag);
+      c.textContent = text;
+      if (isNew) c.className = 'new';
+      return c;
+    };
     const row = (name, i) => {
       const fresh = (assisted) => beaten && (i === 'total' ? beaten.total && beaten.totalAssisted === assisted : beaten.assisted === assisted && beaten.event === i);
-      const pick = (t) => (i === 'total' ? t.total : t.events[i]);
-      return `<tr><th>${name}</th>${cell(pick(bests.own), fresh(false))}${cell(pick(bests.assisted), fresh(true))}</tr>`;
+      const pick = (t) => { const n = i === 'total' ? t.total : t.events[i]; return n ? n.toLocaleString('en-US') : '–'; };
+      const tr = document.createElement('tr');
+      tr.append(cell('th', name), cell('td', pick(bests.own), fresh(false)), cell('td', pick(bests.assisted), fresh(true)));
+      return tr;
     };
-    bestsPanel.querySelector('tbody').innerHTML = EVENTS.map(([name], i) => row(name, i)).join('') + row('Decathlon total', 'total');
+    bestsPanel.querySelector('tbody').replaceChildren(...EVENTS.map(([name], i) => row(name, i)), row('Decathlon total', 'total'));
   }
+  // another tab saved its bests (every save includes the stored ones, so this is the latest of both)
+  window.addEventListener('storage', (event) => {
+    if (event.key !== 'decathlon-bests') return;
+    bests.load(savedBests());
+    showBests();
+  });
   bestsPanel?.querySelector('[data-clear-bests]')?.addEventListener('click', () => {
     if (confirm('Clear your personal bests in this browser?')) {
       bests.clear();
@@ -483,6 +512,11 @@ export function mountPlayer(root) {
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) { audio.suspend(); stadiumAudio.suspend(); } else { audio.resume(); stadiumAudio.resume(); }
   });
+  // a game started from the gamepad starts its sound without a user gesture, which
+  // browsers hold back: the first tap or key after it lets the sound play
+  for (const type of ['pointerdown', 'keydown']) {
+    window.addEventListener(type, () => { if (started && !document.hidden) { audio.resume(); stadiumAudio.resume(); } }, { capture: true });
+  }
 
   step();
   draw();

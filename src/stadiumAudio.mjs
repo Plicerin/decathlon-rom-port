@@ -165,7 +165,7 @@ export function createStadiumAudio() {
       }
       vowel.connect(master); vowel.connect(echo);
     },
-    setVolume(v) { volume = Math.max(0, Math.min(1, v)); if (master) master.gain.setTargetAtTime(silent ? 0 : volume, ctx.currentTime, 0.02); },
+    setVolume(v) { if (!Number.isFinite(v)) return; volume = Math.max(0, Math.min(1, v)); if (master) master.gain.setTargetAtTime(silent ? 0 : volume, ctx.currentTime, 0.02); },
     setSilent(s) { silent = s; if (master) master.gain.setTargetAtTime(silent ? 0 : volume, ctx.currentTime, 0.02); },
     suspend() { ctx?.suspend(); },
     resume() { ctx?.resume(); },

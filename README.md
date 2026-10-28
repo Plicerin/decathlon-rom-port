@@ -80,7 +80,9 @@ RAM map, some routines and section headers. It reassembles byte-identically,
 and the translation takes its labels and comments from it. Names are given only
 where the code and the running cartridge agree; the rest keep neutral names
 (`ram_XX`, `LXXXX`), and comments marked "?" are leads, not facts. The names
-live in `tools/annotations.mjs`; `node tools/disasm.mjs` regenerates the source.
+live in `tools/annotations.mjs`. Because it reassembles to the cartridge, the
+source isn't published here: `node tools/disasm.mjs` writes it from your own
+cartridge in `rom/`.
 
 *The Activision Decathlon* is © 1983 Activision. An unofficial preservation
 project, not affiliated with Activision.

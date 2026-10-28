@@ -32,6 +32,7 @@ export function createTiaAudio(workletUrl) {
       if (node) node.port.postMessage({ writes, cycles });
     },
     setVolume(value) {
+      if (!Number.isFinite(value)) return;
       volume = Math.max(0, Math.min(1, value));
       if (gain) gain.gain.value = volume;
     },

@@ -114,6 +114,7 @@ export class Stadium {
 // restarted event or a new game never shows runs from an earlier one.
 const PX_PER_UNIT = 3.9;
 const FIGURE_ROWS = [116, 167], FIGURE_COLS = [8, 48];
+const MAX_RUN_FRAMES = 60 * 60 * 10;
 export class SideBySide {
   constructor() { this.runs = new Map(); this.current = null; this.lastDistance = 0; }
   // after every frame: the frame's colour rows and object rows (absolute
@@ -132,7 +133,8 @@ export class SideBySide {
     }
     const run = this.current;
     if (!run || run.done) return;
-    if (ram[WAIT] > 0x0f) { run.done = true; return; } // over the line
+    // over the line, or ten minutes in (an athlete standing still would record without end)
+    if (ram[WAIT] > 0x0f || run.frames.length >= MAX_RUN_FRAMES) { run.done = true; return; }
     const px = [];
     for (let y = FIGURE_ROWS[0]; y < FIGURE_ROWS[1]; y += 1) {
       for (let x = FIGURE_COLS[0]; x < FIGURE_COLS[1]; x += 1) {
@@ -171,12 +173,22 @@ export class SideBySide {
 // points to the athlete's total, once per athlete per event (between-attempt
 // waits start below it).
 const bcd = (hi, lo) => [hi >> 4, hi & 15, lo >> 4, lo & 15].reduce((n, d) => n * 10 + d, 0);
+// a saved table, whatever is in storage: whole points or 0
+const points = (n) => (Number.isInteger(n) && n > 0 && n < 100000 ? n : 0);
+const table = (t) => ({ events: Array.from({ length: 10 }, (_, i) => points(t?.events?.[i])), total: points(t?.total) });
 export class Bests {
   constructor(saved) {
-    const empty = () => ({ events: Array(10).fill(0), total: 0 });
-    this.own = { ...empty(), ...(saved?.own ?? {}) };
-    this.assisted = { ...empty(), ...(saved?.assisted ?? {}) };
+    this.load(saved);
     this.lastWait = 0;
+  }
+  load(saved) { this.own = table(saved?.own); this.assisted = table(saved?.assisted); }
+  // another tab's bests (as saved): the higher of each is kept
+  merge(saved) {
+    for (const key of ['own', 'assisted']) {
+      const theirs = table(saved?.[key]), mine = this[key];
+      mine.events = mine.events.map((n, i) => Math.max(n, theirs.events[i]));
+      mine.total = Math.max(mine.total, theirs.total);
+    }
   }
   // after every frame; assisted: this event was run with assist; totalAssisted:
   // any of the athlete's events in this game was. Returns what was beaten this frame (or null)
@@ -195,7 +207,7 @@ export class Bests {
     if (!singleEvent(ram) && event === 9 && total > totals.total) { totals.total = total; beaten.total = true; }
     return Object.keys(beaten).length ? { ...beaten, assisted, totalAssisted } : null;
   }
-  clear() { this.own = { events: Array(10).fill(0), total: 0 }; this.assisted = { events: Array(10).fill(0), total: 0 }; }
+  clear() { this.load(null); }
   toJSON() { return { own: this.own, assisted: this.assisted }; }
 }
 
